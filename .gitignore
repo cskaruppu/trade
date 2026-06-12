@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Local config & secrets — never commit your API keys!
+config.yaml
+.env
+*.token
+
+# Data caches / outputs
+data_cache/
+*.csv
+*.parquet
+outputs/
+
+# Tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+.DS_Store
