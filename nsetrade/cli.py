@@ -3,7 +3,9 @@
 Subcommands:
     analyse    Analyse one stock: indicators, patterns and a scored signal.
     screen     Scan a universe and rank stocks by signal score.
-    backtest   Backtest a built-in strategy on one stock.
+    backtest   Risk-managed backtest of a strategy (single stock or portfolio).
+    chart      Render an annotated PNG chart with patterns marked.
+    watch      Live watchlist scanner that alerts when signals fire (Kite).
     patterns   List the patterns/strategies the toolkit knows about.
 """
 
@@ -148,20 +150,90 @@ def _print_table(df):
 
 
 def cmd_backtest(args, cfg):
-    from .backtest import backtest
     from .data import get_provider
 
     provider, pconf = _resolve_provider(args, cfg)
     prov = get_provider(provider, pconf)
     days = int(args.years * 365) + 30
+    target_atr = args.target_atr or None  # 0 -> disable take-profit
+
+    # ---- portfolio mode ----
+    if args.universe or args.symbols:
+        from .backtest import backtest_portfolio
+        from .universe import get_universe
+
+        if args.symbols:
+            syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+        else:
+            syms = get_universe(args.universe)
+
+        frames = {}
+        for i, sym in enumerate(syms):
+            print(f"\r  fetching {i + 1}/{len(syms)} {sym:<14}", end="",
+                  file=sys.stderr)
+            try:
+                frames[sym] = prov.history(sym, period_days=days)
+            except Exception:  # noqa: BLE001
+                pass
+        print("", file=sys.stderr)
+        result = backtest_portfolio(
+            frames, strategy=args.strategy,
+            stop_atr=args.stop_atr, target_atr=target_atr,
+            risk_per_trade=args.risk, cost_bps=args.cost_bps,
+        )
+        print("\n" + result.summary() + "\n")
+        return
+
+    # ---- single-symbol mode ----
     df = prov.history(args.symbol, period_days=days)
-    result = backtest(args.symbol, df, strategy=args.strategy,
-                      cost_bps=args.cost_bps)
-    print("\n" + result.summary() + "\n")
-    if result.metrics["total_return"] < result.metrics["buy_hold_return"]:
-        print("  Note: this strategy underperformed buy-and-hold over this "
-              "window.\n        An edge must beat buy-and-hold *after* costs "
-              "to be worth trading.\n")
+    if args.simple:
+        from .backtest import backtest
+        result = backtest(args.symbol, df, strategy=args.strategy,
+                          cost_bps=args.cost_bps)
+        print("\n" + result.summary() + "\n")
+        if result.metrics["total_return"] < result.metrics["buy_hold_return"]:
+            print("  Note: this strategy underperformed buy-and-hold over this "
+                  "window.\n        An edge must beat buy-and-hold *after* costs "
+                  "to be worth trading.\n")
+    else:
+        from .backtest import backtest_risk
+        result = backtest_risk(
+            args.symbol, df, strategy=args.strategy,
+            stop_atr=args.stop_atr, target_atr=target_atr,
+            risk_per_trade=args.risk, cost_bps=args.cost_bps,
+        )
+        print("\n" + result.summary() + "\n")
+
+
+def cmd_chart(args, cfg):
+    from .charts import render_chart
+    from .data import get_provider
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+    df = prov.history(args.symbol, period_days=args.days)
+    out = render_chart(args.symbol, df, out_path=args.out, bars=args.bars)
+    print(f"saved chart -> {out}")
+
+
+def cmd_watch(args, cfg):
+    from .live import watch
+
+    provider, pconf = _resolve_provider(args, cfg)
+    if args.symbols:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    else:
+        from .universe import get_universe
+        symbols = get_universe(args.universe or cfg.get("default_universe",
+                                                        "nifty50"))
+    watch(
+        symbols,
+        provider=provider,
+        provider_config=pconf,
+        interval_seconds=args.interval,
+        only_market_hours=not args.always,
+        max_iterations=args.iterations,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -219,14 +291,44 @@ def build_parser() -> argparse.ArgumentParser:
                    help="hide bearish table")
     s.set_defaults(func=cmd_screen)
 
-    b = sub.add_parser("backtest", help="backtest a strategy on one stock")
-    b.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
+    b = sub.add_parser("backtest",
+                       help="backtest a strategy (risk-managed by default)")
+    b.add_argument("symbol", nargs="?", default="RELIANCE",
+                   help="NSE symbol (ignored in portfolio mode)")
     b.add_argument("--strategy", default="rsi_ma",
                    help="rsi_ma | sma_crossover | macd | breakout")
     b.add_argument("--years", type=float, default=3.0, help="lookback in years")
     b.add_argument("--cost-bps", type=float, default=5.0,
                    help="per-trade cost in basis points")
+    b.add_argument("--stop-atr", type=float, default=2.0,
+                   help="stop-loss distance in ATR multiples")
+    b.add_argument("--target-atr", type=float, default=4.0,
+                   help="take-profit distance in ATR multiples (0 to disable)")
+    b.add_argument("--risk", type=float, default=0.01,
+                   help="fraction of equity risked per trade (0.01 = 1%%)")
+    b.add_argument("--simple", action="store_true",
+                   help="use the simple always-in vectorised backtest instead")
+    b.add_argument("--universe", help="portfolio mode: nifty50 | nifty100")
+    b.add_argument("--symbols", help="portfolio mode: comma-separated symbols")
     b.set_defaults(func=cmd_backtest)
+
+    c = sub.add_parser("chart", help="render an annotated PNG chart")
+    c.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
+    c.add_argument("--out", help="output PNG path (default <SYMBOL>.png)")
+    c.add_argument("--days", type=int, default=400, help="history window (days)")
+    c.add_argument("--bars", type=int, default=180, help="bars to plot")
+    c.set_defaults(func=cmd_chart)
+
+    w = sub.add_parser("watch", help="live watchlist scanner (needs Kite)")
+    w.add_argument("--universe", help="nifty50 | nifty100")
+    w.add_argument("--symbols", help="comma-separated watchlist")
+    w.add_argument("--interval", type=int, default=300,
+                   help="seconds between scans")
+    w.add_argument("--always", action="store_true",
+                   help="scan even outside NSE market hours")
+    w.add_argument("--iterations", type=int, default=None,
+                   help="stop after N scans (default: run forever)")
+    w.set_defaults(func=cmd_watch)
 
     pt = sub.add_parser("patterns", help="list known patterns & strategies")
     pt.set_defaults(func=cmd_patterns)

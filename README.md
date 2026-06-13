@@ -22,7 +22,10 @@ risk real money.
 | **Candlestick patterns** | Doji, Hammer, Shooting Star, Bullish/Bearish Engulfing, Morning/Evening Star, Piercing Line, Dark Cloud Cover. |
 | **Chart patterns / signals** | Golden & Death cross, support/resistance, N‑day breakouts, 52‑week high/low proximity, RSI reversals, MACD crossovers. |
 | **Screener** | Scan a universe (Nifty 50 / Nifty 500 / custom) and rank stocks by a combined bullish/bearish score with human‑readable reasons. |
-| **Backtester** | Vectorised backtest of built‑in strategies with win‑rate, CAGR, Sharpe, max drawdown and an equity curve. |
+| **Backtester** | Risk‑managed event‑driven backtest (ATR stop‑loss, take‑profit, position sizing) with win‑rate, CAGR, Sharpe, max drawdown, profit factor, expectancy and a full trade log. Plus **portfolio‑level** testing across a basket. |
+| **Charts** | One‑command annotated PNG charts (price + MAs + Bollinger, volume, RSI, MACD) with detected patterns marked — glanceable on a phone. |
+| **Live scanner** | Poll a watchlist on your Kite feed during market hours and alert when a signal/pattern fires. |
+| **Dashboard** | A Streamlit web app over the whole toolkit: analyse, screen and backtest interactively. |
 
 ---
 
@@ -35,6 +38,8 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e .                 # core (pandas, numpy, pyyaml)
 pip install -e ".[yfinance]"     # add the free yfinance data provider
 pip install -e ".[kite]"         # add the Zerodha Kite provider
+pip install -e ".[charts]"       # add PNG chart export (matplotlib)
+pip install -e ".[dashboard]"    # add the Streamlit web dashboard
 ```
 
 ## Quick start
@@ -46,8 +51,20 @@ nsetrade analyse RELIANCE
 # Screen the Nifty 50 and show the top bullish setups
 nsetrade screen --universe nifty50 --top 15
 
-# Backtest the built-in "rsi_ma" strategy on a stock over 3 years
-nsetrade backtest RELIANCE --strategy rsi_ma --years 3
+# Risk-managed backtest (1% risk/trade, 2xATR stop, 4xATR target)
+nsetrade backtest RELIANCE --strategy rsi_ma --years 3 --stop-atr 2 --target-atr 4
+
+# Backtest the whole Nifty 50 as a portfolio
+nsetrade backtest --universe nifty50 --strategy breakout --years 3
+
+# Save an annotated PNG chart with patterns marked
+nsetrade chart RELIANCE --out reliance.png
+
+# Live-watch a basket on your Kite feed (alerts when signals fire)
+nsetrade watch --symbols RELIANCE,INFY,TCS --interval 300
+
+# Launch the interactive web dashboard
+streamlit run dashboard/app.py
 
 # List the patterns the toolkit knows about
 nsetrade patterns

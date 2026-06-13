@@ -19,7 +19,9 @@ dependencies = [
 [project.optional-dependencies]
 yfinance = ["yfinance>=0.2.30"]
 kite = ["kiteconnect>=4.2"]
-dev = ["pytest>=7.0"]
+charts = ["matplotlib>=3.6"]
+dashboard = ["streamlit>=1.30", "matplotlib>=3.6"]
+dev = ["pytest>=7.0", "matplotlib>=3.6"]
 
 [project.scripts]
 nsetrade = "nsetrade.cli:main"
