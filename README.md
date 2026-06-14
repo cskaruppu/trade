@@ -85,6 +85,48 @@ and update `config.yaml` (or set `KITE_ACCESS_TOKEN`).
 
 ---
 
+## Run it privately on your Windows laptop (no cloud, nothing exposed)
+
+This toolkit is designed to run entirely on your own machine. Nothing is sent
+anywhere except the data requests to your chosen provider (Yahoo or Kite). To
+keep it private:
+
+**One-time setup** — double-click `scripts\setup.bat` (or run it in a terminal).
+It installs Python deps into a local `.venv` and creates your `config.yaml`.
+You need [Python 3](https://www.python.org/downloads/) installed first (tick
+*"Add Python to PATH"* in the installer).
+
+**Run the dashboard** — double-click `scripts\run_dashboard.bat`, then open
+**http://localhost:8501** in your browser. Stop it with `Ctrl+C`.
+
+**Run CLI commands** — use `scripts\nsetrade.bat`, e.g.:
+```bat
+scripts\nsetrade.bat screen --universe nifty50 --top 15
+scripts\nsetrade.bat chart RELIANCE --out reliance.png
+```
+
+### Why this is private & secure
+
+- **Localhost-only binding.** `.streamlit\config.toml` binds the dashboard to
+  `127.0.0.1`, so it is reachable *only from this laptop* — not from your
+  Wi-Fi, your office LAN, or the internet. No one else can open it.
+- **Your API keys never leave the machine.** `config.yaml` (and `.env`,
+  `*.token`) are in `.gitignore`, so your Kite `api_key`/`access_token` are
+  **never committed or pushed** to GitHub. Keep the GitHub repo private too.
+- **No telemetry.** Streamlit usage-stat reporting is turned off.
+- **No external services.** There is no hosted backend, no account, no data
+  sharing. Outbound traffic is only the price-data API calls you trigger.
+
+> If you ever *want* to reach the dashboard from your phone on the same Wi-Fi,
+> you'd change `address` to `0.0.0.0` in `.streamlit\config.toml` — but then add
+> authentication first, and only do it on a trusted network. The default
+> (localhost) needs no password precisely because nothing else can connect.
+
+> ☝️ Treat your `access_token` like a password. If you think it leaked,
+> regenerate it from the Kite developer console immediately.
+
+---
+
 ## The "important patterns" — and how to use them
 
 There is no holy grail, but these setups are the bread and butter of

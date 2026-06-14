@@ -1,0 +1,21 @@
+# Streamlit configuration — tuned for PRIVATE, LOCAL-ONLY use.
+# This file is safe to commit (it contains no secrets).
+
+[server]
+# Bind ONLY to the loopback interface. The dashboard is reachable from this
+# laptop at http://localhost:8501 and is NOT exposed to your Wi-Fi/LAN or the
+# internet. This is the key privacy/security setting.
+address = "127.0.0.1"
+port = 8501
+headless = true
+# Disable cross-origin/websocket access from other hosts.
+enableCORS = true
+enableXsrfProtection = true
+
+[browser]
+# Do not phone home with usage statistics.
+gatherUsageStats = false
+serverAddress = "localhost"
+
+[theme]
+base = "dark"
