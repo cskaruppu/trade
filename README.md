@@ -24,6 +24,11 @@ risk real money.
 | **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
+| **Pattern edge** | Backtest whether a chart pattern *historically worked* on a stock: hit‑rate, average forward return, target‑hit rate — evidence, not just a shape. |
+| **Confluence** | Rank stocks where **daily + weekly + monthly** signals agree, with one weighted conviction score. |
+| **Trade plan** | Auto entry / ATR stop / measured‑move target / position size from your capital and risk %. |
+| **Alerts** | The live scanner pushes to console, a log file and optionally **Telegram**. |
+| **Pro dashboard** | Interactive Plotly candlestick charts with pattern overlays, dark theme, multi‑tab layout. |
 | **Screener** | Scan a universe (Nifty 50 / Nifty 500 / custom) and rank stocks by a combined bullish/bearish score with human‑readable reasons. |
 | **Backtester** | Risk‑managed event‑driven backtest (ATR stop‑loss, take‑profit, position sizing) with win‑rate, CAGR, Sharpe, max drawdown, profit factor, expectancy and a full trade log. Plus **portfolio‑level** testing across a basket. |
 | **Charts** | One‑command annotated PNG charts (price + MAs + Bollinger, volume, RSI, MACD) with detected patterns marked — glanceable on a phone. |
@@ -80,6 +85,15 @@ nsetrade scan --universe nifty50 --timeframes weekly --breakouts-only
 # Analyse / chart on a higher timeframe
 nsetrade analyse RELIANCE --timeframe weekly
 nsetrade chart RELIANCE --timeframe monthly
+
+# Does a pattern historically work on this stock?
+nsetrade edge RELIANCE --pattern cup_and_handle --forward 20
+
+# Rank stocks where daily/weekly/monthly agree
+nsetrade confluence --watchlist --aligned-only
+
+# Auto trade plan (entry/stop/target/size)
+nsetrade plan RELIANCE --capital 200000 --risk 0.01
 
 # List the patterns the toolkit knows about
 nsetrade patterns
