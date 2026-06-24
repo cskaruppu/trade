@@ -329,7 +329,94 @@ def cmd_scan(args, cfg):
     print("\n  (heuristic detections — always confirm on the chart before acting)\n")
 
 
+def cmd_edge(args, cfg):
+    from .data import get_provider
+    from .edge import all_pattern_edges, pattern_edge
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+    tf = getattr(args, "timeframe", "daily")
+    df = _fetch(prov, args.symbol, tf, args.days)
+
+    print(f"\n=== Pattern edge — {args.symbol} ({tf}) ===")
+    print(f"How past breakouts performed over the next {args.forward} bars "
+          f"(target {args.target:.0%}):\n")
+    if args.pattern:
+        edges = [pattern_edge(df, args.pattern, forward_bars=args.forward,
+                              target_pct=args.target)]
+    else:
+        edges = all_pattern_edges(df, forward_bars=args.forward,
+                                  target_pct=args.target)
+    shown = 0
+    for e in sorted(edges, key=lambda x: x.occurrences, reverse=True):
+        if e.occurrences == 0:
+            continue
+        shown += 1
+        print(f"  • {e.describe()}")
+        print(f"      avg max gain {e.avg_max_favorable:+.1%}, "
+              f"avg max drawdown {e.avg_max_adverse:+.1%}")
+    if not shown:
+        print("  (no historical breakouts of these patterns on this symbol)")
+    print("\n  Past performance is descriptive only — small samples are noisy.\n")
+
+
+def cmd_confluence(args, cfg):
+    from .confluence import confluence_scan
+
+    provider, pconf = _resolve_provider(args, cfg)
+    symbols = _resolve_symbols(args, cfg)
+    tfs = tuple(t.strip() for t in args.timeframes.split(",") if t.strip())
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    results = confluence_scan(symbols, provider=provider, provider_config=pconf,
+                              timeframes=tfs, period_days=args.days,
+                              on_progress=progress)
+    print("", file=sys.stderr)
+
+    aligned = [c for c in results if c.aligned != "mixed"] if args.aligned_only \
+        else results
+    top = aligned[:args.top]
+    print(f"\nMulti-timeframe confluence (top {len(top)} by conviction):")
+    header = f"  {'symbol':<12} {'conviction':>10} {'aligned':<9}  " + "  ".join(
+        f"{tf:<7}" for tf in tfs)
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+    for c in top:
+        tf_cells = "  ".join(
+            f"{c.per_timeframe[tf].verdict[:7]:<7}" if tf in c.per_timeframe
+            else f"{'—':<7}" for tf in tfs)
+        print(f"  {c.symbol:<12} {c.conviction:>+10.2f} {c.aligned:<9}  {tf_cells}")
+    print()
+
+
+def cmd_plan(args, cfg):
+    from .data import get_provider
+    from .patterns import detect_advanced
+    from .tradeplan import trade_plan
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+    tf = getattr(args, "timeframe", "daily")
+    df = _fetch(prov, args.symbol, tf, args.days)
+
+    # use the strongest detected bullish pattern for a measured-move target
+    pattern = None
+    for m in detect_advanced(df):
+        if m.direction == args.direction.replace("long", "bullish").replace(
+                "short", "bearish") and m.breakout_level and m.support:
+            pattern = m
+            break
+
+    plan = trade_plan(args.symbol, df, direction=args.direction,
+                      capital=args.capital, risk_pct=args.risk,
+                      stop_atr=args.stop_atr, rr_target=args.rr, pattern=pattern)
+    print("\n" + plan.describe())
+
+
 def cmd_watch(args, cfg):
+    from .alerts import AlertConfig
     from .live import watch
 
     provider, pconf = _resolve_provider(args, cfg)
@@ -341,6 +428,7 @@ def cmd_watch(args, cfg):
         interval_seconds=args.interval,
         only_market_hours=not args.always,
         max_iterations=args.iterations,
+        alert_config=AlertConfig.from_config(cfg),
     )
 
 
@@ -474,6 +562,52 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--breakouts-only", action="store_true",
                     help="only show patterns in breakout (not still forming)")
     sc.set_defaults(func=cmd_scan)
+
+    # ---- edge (pattern historical performance) ----
+    ed = sub.add_parser("edge",
+                        help="backtest a pattern's historical follow-through")
+    ed.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
+    ed.add_argument("--pattern", help="one pattern key (else all are measured)")
+    ed.add_argument("--forward", type=int, default=20,
+                    help="bars to measure forward return over")
+    ed.add_argument("--target", type=float, default=0.05,
+                    help="target move fraction (0.05 = 5%%)")
+    ed.add_argument("--days", type=int, default=1500, help="history window (days)")
+    ed.add_argument("--timeframe", choices=tf_choices, default="daily",
+                    help="candle timeframe")
+    ed.set_defaults(func=cmd_edge)
+
+    # ---- confluence (multi-timeframe agreement) ----
+    cf = sub.add_parser("confluence",
+                        help="rank stocks where daily/weekly/monthly agree")
+    cf.add_argument("--universe", help="nifty50 | nifty100")
+    cf.add_argument("--symbols", help="comma-separated custom symbols")
+    cf.add_argument("--watchlist", action="store_true",
+                    help="use your saved watchlist")
+    cf.add_argument("--timeframes", default="daily,weekly,monthly",
+                    help="comma list of timeframes to combine")
+    cf.add_argument("--top", type=int, default=15, help="rows to show")
+    cf.add_argument("--days", type=int, default=400, help="history window (days)")
+    cf.add_argument("--aligned-only", action="store_true",
+                    help="only show stocks aligned across all timeframes")
+    cf.set_defaults(func=cmd_confluence)
+
+    # ---- plan (auto trade plan) ----
+    pl = sub.add_parser("plan", help="generate a trade plan (entry/stop/target/size)")
+    pl.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
+    pl.add_argument("--direction", choices=["long", "short"], default="long")
+    pl.add_argument("--capital", type=float, default=100_000.0,
+                    help="account capital (₹)")
+    pl.add_argument("--risk", type=float, default=0.01,
+                    help="fraction of capital risked (0.01 = 1%%)")
+    pl.add_argument("--stop-atr", type=float, default=2.0,
+                    help="stop distance in ATR multiples")
+    pl.add_argument("--rr", type=float, default=2.0,
+                    help="reward:risk target if no pattern measured move")
+    pl.add_argument("--days", type=int, default=400, help="history window (days)")
+    pl.add_argument("--timeframe", choices=tf_choices, default="daily",
+                    help="candle timeframe")
+    pl.set_defaults(func=cmd_plan)
 
     w = sub.add_parser("watch", help="live watchlist scanner (needs Kite)")
     w.add_argument("--universe", help="nifty50 | nifty100")

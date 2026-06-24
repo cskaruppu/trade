@@ -106,13 +106,26 @@ def watch(
     only_market_hours: bool = True,
     on_alert: Optional[Callable[[Alert], None]] = None,
     max_iterations: Optional[int] = None,
+    alert_config=None,
 ) -> None:
     """Poll ``symbols`` every ``interval_seconds`` and dispatch alerts.
 
     Runs until interrupted (Ctrl-C) or ``max_iterations`` is reached. By default
-    it only scans during NSE market hours.
+    it only scans during NSE market hours. When ``alert_config`` (an
+    :class:`nsetrade.alerts.AlertConfig`) is given, alerts are also written to a
+    log file and pushed to Telegram if configured.
     """
-    emit = on_alert or (lambda a: print(a.line()))
+    if on_alert is not None:
+        emit = on_alert
+    elif alert_config is not None:
+        from .alerts import dispatch
+
+        def emit(a: Alert) -> None:
+            dispatch(a.line(), alert_config)
+    else:
+        def emit(a: Alert) -> None:
+            print(a.line())
+
     prev: dict[str, Signal] = {}
     iterations = 0
 

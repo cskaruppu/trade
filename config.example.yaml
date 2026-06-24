@@ -20,3 +20,14 @@ providers:
 
 # Default screening universe: nifty50 | nifty100 | nifty500 | custom
 default_universe: nifty50
+
+# Optional alerting for the live `watch` scanner.
+alerts:
+  console: true
+  log_file: alerts.log
+  # Push alerts to your phone via a Telegram bot (optional).
+  # Create a bot with @BotFather to get a token, and get your chat_id from
+  # @userinfobot. You can also set TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars.
+  telegram:
+    token: ""
+    chat_id: ""

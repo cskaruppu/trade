@@ -17,6 +17,9 @@ config.yaml
 # Personal watchlist (keep your picks private)
 watchlist.txt
 
+# Local alert log
+alerts.log
+
 # Data caches / outputs
 data_cache/
 *.csv
