@@ -39,20 +39,26 @@ def screen(
     provider_config: Optional[dict] = None,
     period_days: int = 400,
     interval: str = "1d",
+    timeframe: str = "daily",
     on_progress=None,
 ) -> ScreenResult:
     """Fetch each symbol, score it, and collect results.
 
     Network/data errors for individual symbols are captured in ``errors`` rather
-    than aborting the whole scan.
+    than aborting the whole scan. ``timeframe`` ("daily"/"weekly"/"monthly")
+    resamples the daily data before scoring.
     """
+    from ..resample import resample_ohlcv, scale_period_days
+
     prov = get_provider(provider, provider_config)
+    fetch_days = scale_period_days(period_days, timeframe)
     signals: list[Signal] = []
     errors: dict[str, str] = {}
 
     for i, sym in enumerate(symbols):
         try:
-            df = prov.history(sym, interval=interval, period_days=period_days)
+            df = prov.history(sym, interval=interval, period_days=fetch_days)
+            df = resample_ohlcv(df, timeframe)
             signals.append(signal_for_frame(sym, df))
         except Exception as exc:  # noqa: BLE001 - keep scanning on per-symbol error
             errors[sym] = str(exc)

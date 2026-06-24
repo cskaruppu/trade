@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import streamlit as st
 
+from nsetrade import watchlist as wl
 from nsetrade.backtest import backtest_risk
 from nsetrade.config import load_config, provider_config
 from nsetrade.data import get_provider
 from nsetrade.indicators import add_all
-from nsetrade.patterns.candlestick import detect_candlesticks
-from nsetrade.patterns.chart import detect_chart_patterns
+from nsetrade.patterns import detect_advanced
+from nsetrade.resample import resample_ohlcv, scale_period_days
 from nsetrade.screener import screen
 from nsetrade.signals.engine import signal_for_frame
 from nsetrade.universe import UNIVERSES, get_universe
@@ -33,9 +34,10 @@ cfg = load_config()
 
 
 @st.cache_data(show_spinner=False)
-def _history(provider, symbol, days):
+def _history(provider, symbol, days, timeframe="daily"):
     prov = get_provider(provider, provider_config(cfg, provider))
-    return prov.history(symbol, period_days=days)
+    df = prov.history(symbol, period_days=scale_period_days(days, timeframe))
+    return resample_ohlcv(df, timeframe)
 
 
 def _get(sig, key, default=float("nan")):
@@ -53,10 +55,12 @@ st.sidebar.caption(
     "Credentials for `kite` are read from config.yaml. "
     "yfinance needs no setup."
 )
+timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
+                             horizontal=True)
 st.sidebar.warning("Research/education only — not investment advice.")
 
-tab_analyse, tab_screen, tab_backtest = st.tabs(
-    ["Analyse", "Screener", "Backtest"]
+tab_analyse, tab_watch, tab_screen, tab_backtest = st.tabs(
+    ["Analyse", "Watchlist", "Screener", "Backtest"]
 )
 
 
@@ -67,9 +71,11 @@ with tab_analyse:
     symbol = col1.text_input("NSE symbol", value="RELIANCE").strip().upper()
     days = col2.slider("History (days)", 120, 800, 400, step=20)
 
+    st.caption(f"Timeframe: **{timeframe}** (change in the sidebar)")
+
     if st.button("Analyse", type="primary") or symbol:
         try:
-            df = _history(provider, symbol, days)
+            df = _history(provider, symbol, days, timeframe)
             sig = signal_for_frame(symbol, df)
             enriched = add_all(df)
 
@@ -94,17 +100,88 @@ with tab_analyse:
                 f"**Support:** {sig.levels.get('support')}  \n"
                 f"**Resistance:** {sig.levels.get('resistance')}"
             )
+
+            st.markdown("**Chart patterns** (heuristic — confirm visually):")
+            matches = detect_advanced(df)
+            if matches:
+                st.dataframe(
+                    [{"pattern": m.name, "direction": m.direction,
+                      "status": m.status, "breakout": m.breakout_level,
+                      "note": m.note} for m in matches],
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.caption("No structural patterns detected on this timeframe.")
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not analyse {symbol}: {exc}")
+
+
+# ---- Watchlist tab -------------------------------------------------------
+with tab_watch:
+    st.subheader("Your watchlist")
+    st.caption("Stored locally in watchlist.txt (git-ignored, stays private).")
+
+    current = wl.load()
+    colA, colB = st.columns([3, 1])
+    add_text = colA.text_input("Add symbols (comma-separated)",
+                               placeholder="RELIANCE, INFY, TCS")
+    if colB.button("Add") and add_text:
+        wl.add([s for s in add_text.replace(",", " ").split()])
+        st.rerun()
+
+    if current:
+        drop = st.multiselect("Remove symbols", current)
+        if st.button("Remove selected") and drop:
+            wl.remove(drop)
+            st.rerun()
+        st.write(f"**{len(current)} symbols:** " + ", ".join(current))
+    else:
+        st.info("Watchlist is empty. Add symbols above, or import an NSE CSV "
+                "with the CLI: `nsetrade watchlist import EQUITY_L.csv`.")
+
+    st.divider()
+    st.markdown("**Scan the watchlist for chart patterns**")
+    scan_tfs = st.multiselect("Timeframes", ["daily", "weekly", "monthly"],
+                              default=["daily", "weekly"])
+    breakouts_only = st.checkbox("Breakouts only (hide still-forming)")
+    if st.button("Scan patterns", type="primary") and current:
+        rows = []
+        prog = st.progress(0.0)
+        total = len(current) * max(len(scan_tfs), 1)
+        done = 0
+        for sym in current:
+            for tf in scan_tfs:
+                done += 1
+                prog.progress(done / total, text=f"{sym} ({tf})")
+                try:
+                    d = _history(provider, sym, 400, tf)
+                    for m in detect_advanced(d):
+                        if breakouts_only and m.status != "breakout":
+                            continue
+                        rows.append({"symbol": sym, "tf": tf, "pattern": m.name,
+                                     "direction": m.direction, "status": m.status,
+                                     "breakout": m.breakout_level, "note": m.note})
+                except Exception:  # noqa: BLE001
+                    continue
+        prog.empty()
+        if rows:
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No patterns detected for the current selection.")
 
 
 # ---- Screener tab --------------------------------------------------------
 with tab_screen:
     st.subheader("Screen a universe")
-    uni = st.selectbox("Universe", list(UNIVERSES), index=0)
+    src = st.radio("Source", ["Universe", "My watchlist"], horizontal=True)
+    uni = st.selectbox("Universe", list(UNIVERSES), index=0,
+                       disabled=(src != "Universe"))
     top = st.slider("Show top N per side", 5, 30, 10)
     if st.button("Run screen"):
-        symbols = get_universe(uni)
+        symbols = wl.load() if src == "My watchlist" else get_universe(uni)
+        if not symbols:
+            st.warning("Watchlist is empty.")
+            st.stop()
         prog = st.progress(0.0, text="scanning…")
 
         def _cb(done, total, sym):
@@ -113,6 +190,7 @@ with tab_screen:
         result = screen(
             symbols, provider=provider,
             provider_config=provider_config(cfg, provider),
+            timeframe=timeframe,
             on_progress=_cb,
         )
         prog.empty()
@@ -143,7 +221,7 @@ with tab_backtest:
 
     if st.button("Run backtest", type="primary"):
         try:
-            df = _history(provider, bsym, int(years * 365) + 30)
+            df = _history(provider, bsym, int(years * 365) + 30, timeframe)
             res = backtest_risk(
                 bsym, df, strategy=strat, stop_atr=stop_atr,
                 target_atr=target_atr or None, risk_per_trade=risk,

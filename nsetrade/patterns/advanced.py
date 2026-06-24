@@ -1,0 +1,472 @@
+"""Structural chart-pattern detectors: Cup & Handle, Darvas Box, Flag,
+Double Bottom/Top and Triangles.
+
+These are *visual* patterns with no single rigorous definition, so each detector
+below is a documented heuristic. Treat a hit as a **candidate to confirm on the
+chart**, not a guaranteed setup — there will be false positives and misses. Each
+detector inspects the most recent formation in a lookback window and returns a
+:class:`PatternMatch` describing it (including the breakout level to watch).
+
+All detectors take the canonical OHLCV frame and work on any timeframe (daily,
+weekly, monthly) — feed them a resampled frame for higher-timeframe scans.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+
+
+@dataclass
+class PatternMatch:
+    name: str
+    found: bool
+    direction: str = ""          # "bullish" | "bearish"
+    status: str = "none"         # "forming" | "breakout"
+    breakout_level: Optional[float] = None
+    support: Optional[float] = None
+    resistance: Optional[float] = None
+    start: Optional[pd.Timestamp] = None
+    end: Optional[pd.Timestamp] = None
+    note: str = ""
+
+    def describe(self) -> str:
+        if not self.found:
+            return f"{self.name}: not detected"
+        lvl = f" breakout>{self.breakout_level:.2f}" if self.breakout_level else ""
+        return (f"{self.name} [{self.direction}/{self.status}]{lvl}"
+                + (f" — {self.note}" if self.note else ""))
+
+
+def _na(name: str, note: str = "") -> PatternMatch:
+    return PatternMatch(name=name, found=False, note=note)
+
+
+# --------------------------------------------------------------------------
+# Darvas Box
+# --------------------------------------------------------------------------
+
+
+def detect_darvas_box(
+    df: pd.DataFrame,
+    *,
+    box_window: int = 40,
+    breakout_window: int = 5,
+    max_box_pct: float = 0.20,
+) -> PatternMatch:
+    """Nicolas Darvas' box: a tight consolidation that price then breaks upward.
+
+    A box is the high/low range over ``box_window`` bars ending ``breakout_window``
+    bars ago. It must be reasonably tight (range <= ``max_box_pct``). A hit fires
+    when price in the last ``breakout_window`` bars closes above the box top.
+    """
+    name = "Darvas Box"
+    need = box_window + breakout_window + 1
+    if len(df) < need:
+        return _na(name, f"need >= {need} bars")
+
+    box = df.iloc[-(box_window + breakout_window):-breakout_window]
+    recent = df.iloc[-breakout_window:]
+    box_top = float(box["high"].max())
+    box_bottom = float(box["low"].min())
+    if box_bottom <= 0:
+        return _na(name)
+    box_range = (box_top - box_bottom) / box_bottom
+    tight = box_range <= max_box_pct
+    broke_up = bool((recent["close"] > box_top).any())
+    last = float(df["close"].iloc[-1])
+
+    found = tight and broke_up and last > box_bottom
+    status = "breakout" if (found and broke_up) else ("forming" if tight else "none")
+    return PatternMatch(
+        name=name,
+        found=bool(found),
+        direction="bullish",
+        status=status,
+        breakout_level=box_top,
+        support=box_bottom,
+        resistance=box_top,
+        start=box.index[0],
+        end=df.index[-1],
+        note=f"box {box_bottom:.1f}-{box_top:.1f} ({box_range:.0%} wide)",
+    )
+
+
+# --------------------------------------------------------------------------
+# Cup and Handle
+# --------------------------------------------------------------------------
+
+
+def detect_cup_and_handle(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 180,
+    rim_tol: float = 0.08,
+    min_depth: float = 0.12,
+    max_depth: float = 0.50,
+    min_cup_bars: int = 20,
+    handle_max_retrace: float = 0.5,
+) -> PatternMatch:
+    """Rounded "U" cup between two similar rims, then a small handle pullback.
+
+    Heuristic: the lowest close sits in the middle of the window (the cup base);
+    the highs before and after it (the two rims) are within ``rim_tol`` of each
+    other; cup depth is ``min_depth``..``max_depth``; the dip after the right rim
+    (the handle) retraces at most ``handle_max_retrace`` of the cup depth. A
+    breakout fires when price reaches the rim (resistance).
+    """
+    name = "Cup & Handle"
+    win = df.tail(lookback)
+    n = len(win)
+    if n < max(40, min_cup_bars + 10):
+        return _na(name, "not enough bars")
+
+    close = win["close"].values
+    # cup base: lowest close constrained to the middle 50% of the window
+    lo, hi = int(n * 0.25), int(n * 0.75)
+    b = lo + int(np.argmin(close[lo:hi]))
+    if b <= 0 or b >= n - 1:
+        return _na(name)
+
+    lr = int(np.argmax(close[:b]))            # left rim
+    rr = b + int(np.argmax(close[b:]))        # right rim
+    rim_l, rim_r, bottom = close[lr], close[rr], close[b]
+    rim = max(rim_l, rim_r)
+    if rim <= 0:
+        return _na(name)
+
+    rims_similar = abs(rim_l - rim_r) / rim <= rim_tol
+    depth = (rim - bottom) / rim
+    depth_ok = min_depth <= depth <= max_depth
+    width = rr - lr
+    centered = 0.30 <= (b - lr) / max(width, 1) <= 0.70
+    wide_enough = width >= min_cup_bars
+
+    # handle = the bars after the right rim
+    handle = close[rr:]
+    handle_low = float(handle.min()) if len(handle) > 1 else rim_r
+    cup_depth_abs = max(rim - bottom, 1e-9)
+    handle_retrace = (rim_r - handle_low) / cup_depth_abs
+    handle_ok = handle_retrace <= handle_max_retrace
+
+    found = bool(rims_similar and depth_ok and centered and wide_enough and handle_ok)
+    last = float(close[-1])
+    status = "breakout" if (found and last >= rim * 0.99) else (
+        "forming" if found else "none")
+    return PatternMatch(
+        name=name,
+        found=found,
+        direction="bullish",
+        status=status,
+        breakout_level=float(rim),
+        support=float(bottom),
+        resistance=float(rim),
+        start=win.index[lr],
+        end=df.index[-1],
+        note=f"depth {depth:.0%}, handle retrace {handle_retrace:.0%}",
+    )
+
+
+# --------------------------------------------------------------------------
+# Flag / Pennant (bull continuation)
+# --------------------------------------------------------------------------
+
+
+def detect_flag(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 45,
+    pole_min_gain: float = 0.12,
+    pole_max_bars: int = 15,
+    flag_min_bars: int = 3,
+    flag_max_bars: int = 20,
+    max_retrace: float = 0.5,
+) -> PatternMatch:
+    """Bull flag: a sharp rally (the pole), a shallow drift down/sideways (the
+    flag), then a breakout that continues the trend.
+
+    Heuristic: the window's highest close is the pole top; the lowest close in
+    the ``pole_max_bars`` before it is the pole base; the pole must gain at least
+    ``pole_min_gain``. The bars after the pole top form the flag and must retrace
+    no more than ``max_retrace`` of the pole. A breakout fires when price closes
+    back above the flag's high.
+    """
+    name = "Bull Flag"
+    win = df.tail(lookback)
+    n = len(win)
+    if n < flag_min_bars + 8:
+        return _na(name, "not enough bars")
+
+    close = win["close"].values
+    high = win["high"].values
+    low = win["low"].values
+
+    pt = int(np.argmax(close))                # pole top
+    if pt < 2 or pt > n - (flag_min_bars + 1):
+        return _na(name, "no room for pole/flag")
+
+    start = max(0, pt - pole_max_bars)
+    ps = start + int(np.argmin(close[start:pt + 1]))   # pole base
+    if close[ps] <= 0:
+        return _na(name)
+    pole_gain = (close[pt] - close[ps]) / close[ps]
+    pole_bars = pt - ps
+
+    flag_close = close[pt + 1:]
+    flag_low = float(low[pt + 1:].min())
+    flag_bars = len(flag_close)
+    # resistance = the flag's upper boundary. Exclude the latest bar (so a
+    # breakout bar isn't part of its own wall) and the first post-pole bar
+    # (whose wick can still reach back to the pole top).
+    flag_highs = high[pt + 1:]
+    if len(flag_highs) >= 3:
+        flag_high = float(flag_highs[1:-1].max())
+    elif len(flag_highs) >= 2:
+        flag_high = float(flag_highs[:-1].max())
+    else:
+        flag_high = float(high[pt])
+    cup = max(close[pt] - close[ps], 1e-9)
+    retrace = (close[pt] - flag_low) / cup
+
+    pole_ok = pole_gain >= pole_min_gain and 2 <= pole_bars <= pole_max_bars
+    flag_ok = flag_min_bars <= flag_bars <= flag_max_bars and retrace <= max_retrace
+    last = float(close[-1])
+
+    found = bool(pole_ok and flag_ok)
+    status = "breakout" if (found and last >= flag_high) else (
+        "forming" if found else "none")
+    return PatternMatch(
+        name=name,
+        found=found,
+        direction="bullish",
+        status=status,
+        breakout_level=flag_high,
+        support=flag_low,
+        resistance=flag_high,
+        start=win.index[ps],
+        end=df.index[-1],
+        note=f"pole +{pole_gain:.0%} in {pole_bars} bars, flag {flag_bars} bars",
+    )
+
+
+# --------------------------------------------------------------------------
+# Swing helpers + Double Bottom/Top + Triangles
+# --------------------------------------------------------------------------
+
+
+def _dedupe_clusters(idxs, values, want_max: bool, min_gap: int = 4):
+    """Collapse runs of near-adjacent pivots into one extreme per cluster."""
+    if not idxs:
+        return []
+    groups = [[idxs[0]]]
+    for i in idxs[1:]:
+        if i - groups[-1][-1] <= min_gap:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    pick = (lambda g: max(g, key=lambda k: values[k])) if want_max else (
+        lambda g: min(g, key=lambda k: values[k]))
+    return [pick(g) for g in groups]
+
+
+def _swings(df: pd.DataFrame, left: int = 3, right: int = 3):
+    """Return (swing_high_idx, swing_low_idx) as positional index lists.
+
+    Adjacent pivots (e.g. flat tops/plateaus) are collapsed to a single point
+    so downstream "rising lows / flat highs" logic sees distinct pivots.
+    """
+    h, l = df["high"].values, df["low"].values
+    n = len(df)
+    highs, lows = [], []
+    for i in range(left, n - right):
+        if h[i] == h[i - left:i + right + 1].max():
+            highs.append(i)
+        if l[i] == l[i - left:i + right + 1].min():
+            lows.append(i)
+    highs = _dedupe_clusters(highs, h, want_max=True)
+    lows = _dedupe_clusters(lows, l, want_max=False)
+    return highs, lows
+
+
+def detect_double_bottom(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 120,
+    level_tol: float = 0.04,
+    min_separation: int = 8,
+) -> PatternMatch:
+    """Two swing lows at a similar level ("W") with a peak between; breakout
+    above that peak confirms."""
+    name = "Double Bottom"
+    win = df.tail(lookback)
+    if len(win) < 30:
+        return _na(name, "not enough bars")
+    _, lows = _swings(win)
+    if len(lows) < 2:
+        return _na(name)
+
+    low_vals = win["low"].values
+    high_vals = win["high"].values
+    close = float(win["close"].iloc[-1])
+    # scan recent pairs of swing lows
+    for a in range(len(lows) - 1):
+        for b in range(len(lows) - 1, a, -1):
+            i, j = lows[a], lows[b]
+            if j - i < min_separation:
+                continue
+            la, lb = low_vals[i], low_vals[j]
+            if min(la, lb) <= 0:
+                continue
+            if abs(la - lb) / min(la, lb) > level_tol:
+                continue
+            peak = float(high_vals[i:j + 1].max())
+            if peak <= max(la, lb):
+                continue
+            status = "breakout" if close >= peak * 0.99 else "forming"
+            return PatternMatch(
+                name=name, found=True, direction="bullish", status=status,
+                breakout_level=peak, support=float(min(la, lb)), resistance=peak,
+                start=win.index[i], end=df.index[-1],
+                note=f"bottoms ~{(la + lb) / 2:.1f}, neckline {peak:.1f}",
+            )
+    return _na(name)
+
+
+def detect_double_top(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 120,
+    level_tol: float = 0.04,
+    min_separation: int = 8,
+) -> PatternMatch:
+    """Two swing highs at a similar level ("M") with a trough between; breakdown
+    below that trough confirms."""
+    name = "Double Top"
+    win = df.tail(lookback)
+    if len(win) < 30:
+        return _na(name, "not enough bars")
+    highs, _ = _swings(win)
+    if len(highs) < 2:
+        return _na(name)
+
+    high_vals = win["high"].values
+    low_vals = win["low"].values
+    close = float(win["close"].iloc[-1])
+    for a in range(len(highs) - 1):
+        for b in range(len(highs) - 1, a, -1):
+            i, j = highs[a], highs[b]
+            if j - i < min_separation:
+                continue
+            ha, hb = high_vals[i], high_vals[j]
+            if min(ha, hb) <= 0:
+                continue
+            if abs(ha - hb) / min(ha, hb) > level_tol:
+                continue
+            trough = float(low_vals[i:j + 1].min())
+            if trough >= min(ha, hb):
+                continue
+            status = "breakout" if close <= trough * 1.01 else "forming"
+            return PatternMatch(
+                name=name, found=True, direction="bearish", status=status,
+                breakout_level=trough, support=trough, resistance=float(max(ha, hb)),
+                start=win.index[i], end=df.index[-1],
+                note=f"tops ~{(ha + hb) / 2:.1f}, neckline {trough:.1f}",
+            )
+    return _na(name)
+
+
+def detect_triangle(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 80,
+    flat_tol: float = 0.03,
+    min_pivots: int = 2,
+) -> PatternMatch:
+    """Ascending triangle (flat highs, rising lows) or descending triangle
+    (flat lows, falling highs)."""
+    name = "Triangle"
+    win = df.tail(lookback)
+    if len(win) < 30:
+        return _na(name, "not enough bars")
+    highs, lows = _swings(win)
+    if len(highs) < min_pivots or len(lows) < min_pivots:
+        return _na(name)
+
+    hv = win["high"].values
+    lv = win["low"].values
+    sh = [hv[i] for i in highs[-3:]]
+    sl = [lv[i] for i in lows[-3:]]
+    close = float(win["close"].iloc[-1])
+
+    def _flat(vals):
+        return (max(vals) - min(vals)) / min(vals) <= flat_tol if min(vals) > 0 else False
+
+    def _rising(vals):
+        return all(vals[k] < vals[k + 1] for k in range(len(vals) - 1))
+
+    def _falling(vals):
+        return all(vals[k] > vals[k + 1] for k in range(len(vals) - 1))
+
+    # ascending: flat resistance + rising support -> bullish
+    if _flat(sh) and _rising(sl):
+        res = float(np.mean(sh))
+        status = "breakout" if close >= res * 0.99 else "forming"
+        return PatternMatch(
+            name="Ascending Triangle", found=True, direction="bullish",
+            status=status, breakout_level=res, support=float(sl[0]), resistance=res,
+            start=win.index[lows[-3] if len(lows) >= 3 else lows[0]],
+            end=df.index[-1], note="flat highs, rising lows",
+        )
+    # descending: flat support + falling highs -> bearish
+    if _flat(sl) and _falling(sh):
+        sup = float(np.mean(sl))
+        status = "breakout" if close <= sup * 1.01 else "forming"
+        return PatternMatch(
+            name="Descending Triangle", found=True, direction="bearish",
+            status=status, breakout_level=sup, support=sup, resistance=float(sh[0]),
+            start=win.index[highs[-3] if len(highs) >= 3 else highs[0]],
+            end=df.index[-1], note="flat lows, falling highs",
+        )
+    return _na(name)
+
+
+# --------------------------------------------------------------------------
+# Run them all
+# --------------------------------------------------------------------------
+
+ADVANCED_DETECTORS = {
+    "cup_and_handle": detect_cup_and_handle,
+    "darvas_box": detect_darvas_box,
+    "flag": detect_flag,
+    "double_bottom": detect_double_bottom,
+    "double_top": detect_double_top,
+    "triangle": detect_triangle,
+}
+
+ADVANCED_PATTERNS = [
+    ("cup_and_handle", "Cup & Handle", 1),
+    ("darvas_box", "Darvas Box", 1),
+    ("flag", "Bull Flag", 1),
+    ("double_bottom", "Double Bottom", 1),
+    ("double_top", "Double Top", -1),
+    ("triangle", "Triangle (asc/desc)", 0),
+]
+
+
+def detect_advanced(df: pd.DataFrame, only_found: bool = True) -> list[PatternMatch]:
+    """Run every advanced detector and return the matches.
+
+    With ``only_found=True`` (default) only detected patterns are returned.
+    """
+    results = []
+    for fn in ADVANCED_DETECTORS.values():
+        try:
+            m = fn(df)
+        except Exception:  # noqa: BLE001 - a detector should never break a scan
+            continue
+        if m.found or not only_found:
+            results.append(m)
+    return results

@@ -14,6 +14,9 @@ config.yaml
 .env
 *.token
 
+# Personal watchlist (keep your picks private)
+watchlist.txt
+
 # Data caches / outputs
 data_cache/
 *.csv

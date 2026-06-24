@@ -21,6 +21,9 @@ risk real money.
 | **Technical indicators** | RSI, MACD, SMA/EMA, Bollinger Bands, ATR, ADX, Stochastic, OBV, VWAP. |
 | **Candlestick patterns** | Doji, Hammer, Shooting Star, Bullish/Bearish Engulfing, Morning/Evening Star, Piercing Line, Dark Cloud Cover. |
 | **Chart patterns / signals** | Golden & Death cross, support/resistance, N‑day breakouts, 52‑week high/low proximity, RSI reversals, MACD crossovers. |
+| **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
+| **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
+| **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
 | **Screener** | Scan a universe (Nifty 50 / Nifty 500 / custom) and rank stocks by a combined bullish/bearish score with human‑readable reasons. |
 | **Backtester** | Risk‑managed event‑driven backtest (ATR stop‑loss, take‑profit, position sizing) with win‑rate, CAGR, Sharpe, max drawdown, profit factor, expectancy and a full trade log. Plus **portfolio‑level** testing across a basket. |
 | **Charts** | One‑command annotated PNG charts (price + MAs + Bollinger, volume, RSI, MACD) with detected patterns marked — glanceable on a phone. |
@@ -66,12 +69,44 @@ nsetrade watch --symbols RELIANCE,INFY,TCS --interval 300
 # Launch the interactive web dashboard
 streamlit run dashboard/app.py
 
+# Build & scan your own watchlist
+nsetrade watchlist add RELIANCE INFY TCS
+nsetrade watchlist import EQUITY_L.csv          # import an NSE CSV export
+nsetrade scan --watchlist --timeframes daily,weekly,monthly
+
+# Find structural patterns (cup & handle, darvas, flag…) on weekly charts
+nsetrade scan --universe nifty50 --timeframes weekly --breakouts-only
+
+# Analyse / chart on a higher timeframe
+nsetrade analyse RELIANCE --timeframe weekly
+nsetrade chart RELIANCE --timeframe monthly
+
 # List the patterns the toolkit knows about
 nsetrade patterns
 ```
 
 By default everything uses the free **yfinance** provider, so it works
 immediately with no credentials.
+
+### Watchlist & structural patterns
+
+Build a personal watchlist and scan only your stocks across timeframes:
+
+```bash
+nsetrade watchlist add RELIANCE TATAMOTORS HDFCBANK   # add picks
+nsetrade watchlist list                               # show them
+nsetrade watchlist import ind_nifty500list.csv        # import an NSE CSV
+nsetrade scan --watchlist                             # daily+weekly+monthly scan
+```
+
+The **scan** command runs heuristic detectors for Cup & Handle, Darvas Box,
+Bull Flag, Double Bottom/Top and Triangles, and reports each hit's **breakout
+level** and whether it is *forming* or already *breaking out*.
+
+> ⚠️ These structural patterns are *visual* shapes with no rigorous definition,
+> so detection is **approximate** — treat every hit as a candidate to confirm on
+> the chart, not an automatic trade. The `chart` command (and dashboard) draw
+> the levels so you can eyeball them.
 
 ## Using your Zerodha Kite API
 

@@ -27,23 +27,52 @@ def _resolve_provider(args, cfg):
     return provider, provider_config(cfg, provider)
 
 
+def _fetch(prov, symbol, timeframe, period_days):
+    """Fetch daily data and resample to the requested timeframe."""
+    from .resample import resample_ohlcv, scale_period_days
+
+    df = prov.history(symbol, period_days=scale_period_days(period_days, timeframe))
+    return resample_ohlcv(df, timeframe)
+
+
+def _resolve_symbols(args, cfg):
+    """Pick the symbol list from --symbols, --watchlist or --universe (in order)."""
+    if getattr(args, "symbols", None):
+        return [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if getattr(args, "watchlist", False):
+        from .watchlist import load
+
+        syms = load()
+        if not syms:
+            raise SystemExit("watchlist is empty — add symbols with "
+                             "'nsetrade watchlist add SYM ...'")
+        return syms
+    from .universe import get_universe
+
+    universe = getattr(args, "universe", None) or cfg.get("default_universe",
+                                                          "nifty50")
+    return get_universe(universe)
+
+
 # --------------------------------------------------------------------------
 # analyse
 # --------------------------------------------------------------------------
 
 
 def cmd_analyse(args, cfg):
-    from .signals.engine import analyse
+    from .data import get_provider
+    from .patterns import detect_advanced
+    from .signals.engine import signal_for_frame
 
     provider, pconf = _resolve_provider(args, cfg)
-    sig = analyse(
-        args.symbol,
-        provider=provider,
-        provider_config=pconf,
-        period_days=args.days,
-    )
+    tf = getattr(args, "timeframe", "daily")
+    prov = get_provider(provider, pconf)
+    df = _fetch(prov, args.symbol, tf, args.days)
+    sig = signal_for_frame(args.symbol, df)
+    advanced = detect_advanced(df)
+
     ind = sig.indicators
-    print(f"\n=== {sig.symbol}  ({provider})  as of {sig.date.date()} ===")
+    print(f"\n=== {sig.symbol}  ({provider}, {tf})  as of {sig.date.date()} ===")
     print(f"  Close            : {sig.close:.2f}")
     print(f"  Signal           : {sig.verdict}  (score {sig.score:+.2f})")
     print("  Indicators:")
@@ -66,6 +95,12 @@ def cmd_analyse(args, cfg):
             print(f"    • {r}")
     else:
         print("    • no notable patterns on the latest bar")
+    print("  Chart patterns (heuristic — confirm on the chart):")
+    if advanced:
+        for m in advanced:
+            print(f"    • {m.describe()}")
+    else:
+        print("    • none of the structural patterns detected")
     print()
 
 
@@ -87,11 +122,7 @@ def cmd_screen(args, cfg):
 
     provider, pconf = _resolve_provider(args, cfg)
 
-    if args.symbols:
-        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-    else:
-        universe = args.universe or cfg.get("default_universe", "nifty50")
-        symbols = get_universe(universe)
+    symbols = _resolve_symbols(args, cfg)
 
     def progress(done, total, sym):
         print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
@@ -101,6 +132,7 @@ def cmd_screen(args, cfg):
         provider=provider,
         provider_config=pconf,
         period_days=args.days,
+        timeframe=getattr(args, "timeframe", "daily"),
         on_progress=progress,
     )
     print("", file=sys.stderr)
@@ -210,22 +242,98 @@ def cmd_chart(args, cfg):
     from .data import get_provider
 
     provider, pconf = _resolve_provider(args, cfg)
+    tf = getattr(args, "timeframe", "daily")
     prov = get_provider(provider, pconf)
-    df = prov.history(args.symbol, period_days=args.days)
-    out = render_chart(args.symbol, df, out_path=args.out, bars=args.bars)
+    df = _fetch(prov, args.symbol, tf, args.days)
+    suffix = "" if tf == "daily" else f"_{tf}"
+    out = args.out or f"{args.symbol}{suffix}.png"
+    out = render_chart(f"{args.symbol} ({tf})", df, out_path=out, bars=args.bars)
     print(f"saved chart -> {out}")
+
+
+# --------------------------------------------------------------------------
+# watchlist
+# --------------------------------------------------------------------------
+
+
+def cmd_watchlist(args, cfg):
+    from . import watchlist as wl
+
+    action = args.action
+    if action == "list":
+        syms = wl.load()
+        print("\nWatchlist ({} symbols):".format(len(syms)))
+        for s in syms:
+            print(f"  • {s}")
+        print()
+    elif action == "add":
+        out = wl.add(args.symbols or [])
+        print(f"added; watchlist now has {len(out)} symbols")
+    elif action == "remove":
+        out = wl.remove(args.symbols or [])
+        print(f"removed; watchlist now has {len(out)} symbols")
+    elif action == "clear":
+        wl.clear()
+        print("watchlist cleared")
+    elif action == "import":
+        out = wl.import_csv(args.csv, column=args.column, merge=not args.replace)
+        print(f"imported {len(out)} symbols from {args.csv}")
+    else:  # pragma: no cover
+        raise SystemExit(f"unknown watchlist action {action!r}")
+
+
+# --------------------------------------------------------------------------
+# scan (structural chart patterns across timeframes)
+# --------------------------------------------------------------------------
+
+
+def cmd_scan(args, cfg):
+    from .data import get_provider
+    from .patterns import detect_advanced
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+    symbols = _resolve_symbols(args, cfg)
+    timeframes = [t.strip() for t in args.timeframes.split(",") if t.strip()]
+
+    rows = []
+    total = len(symbols) * len(timeframes)
+    done = 0
+    for sym in symbols:
+        for tf in timeframes:
+            done += 1
+            print(f"\r  scanning {done}/{total}  {sym:<14} {tf:<8}", end="",
+                  file=sys.stderr)
+            try:
+                df = _fetch(prov, sym, tf, args.days)
+                for m in detect_advanced(df):
+                    if args.breakouts_only and m.status != "breakout":
+                        continue
+                    rows.append((sym, tf, m))
+            except Exception:  # noqa: BLE001 - keep scanning
+                continue
+    print("", file=sys.stderr)
+
+    if not rows:
+        print("\nNo structural patterns detected for the given symbols/timeframes.")
+        return
+
+    print(f"\nStructural pattern hits ({len(rows)}):")
+    print(f"  {'symbol':<12} {'tf':<8} {'pattern':<22} {'dir':<8} "
+          f"{'status':<9} {'breakout':>10}")
+    print("  " + "-" * 72)
+    for sym, tf, m in rows:
+        lvl = f"{m.breakout_level:.2f}" if m.breakout_level else "—"
+        print(f"  {sym:<12} {tf:<8} {m.name:<22} {m.direction:<8} "
+              f"{m.status:<9} {lvl:>10}")
+    print("\n  (heuristic detections — always confirm on the chart before acting)\n")
 
 
 def cmd_watch(args, cfg):
     from .live import watch
 
     provider, pconf = _resolve_provider(args, cfg)
-    if args.symbols:
-        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-    else:
-        from .universe import get_universe
-        symbols = get_universe(args.universe or cfg.get("default_universe",
-                                                        "nifty50"))
+    symbols = _resolve_symbols(args, cfg)
     watch(
         symbols,
         provider=provider,
@@ -255,6 +363,10 @@ def cmd_patterns(args, cfg):
     print("\nCandlestick patterns:")
     for _, label, b in CANDLESTICK_PATTERNS:
         print(f"  • {label:<34} ({bias(b)})")
+    from .patterns import ADVANCED_PATTERNS
+    print("\nStructural chart patterns (via 'scan', heuristic):")
+    for _, label, b in ADVANCED_PATTERNS:
+        print(f"  • {label:<34} ({bias(b)})")
     print("\nBacktest strategies:")
     for s in list_strategies():
         print(f"  • {s}")
@@ -277,16 +389,24 @@ def build_parser() -> argparse.ArgumentParser:
                                        "(overrides config)")
     sub = p.add_subparsers(dest="command", required=True)
 
+    tf_choices = ["daily", "weekly", "monthly"]
+
     a = sub.add_parser("analyse", help="analyse one stock")
     a.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
     a.add_argument("--days", type=int, default=400, help="history window (days)")
+    a.add_argument("--timeframe", choices=tf_choices, default="daily",
+                   help="candle timeframe")
     a.set_defaults(func=cmd_analyse)
 
     s = sub.add_parser("screen", help="scan & rank a universe")
     s.add_argument("--universe", help="nifty50 | nifty100 | nifty500")
     s.add_argument("--symbols", help="comma-separated custom symbols")
+    s.add_argument("--watchlist", action="store_true",
+                   help="use your saved watchlist instead of a universe")
     s.add_argument("--top", type=int, default=10, help="rows per side")
     s.add_argument("--days", type=int, default=400, help="history window (days)")
+    s.add_argument("--timeframe", choices=tf_choices, default="daily",
+                   help="candle timeframe")
     s.add_argument("--bullish-only", action="store_true",
                    help="hide bearish table")
     s.set_defaults(func=cmd_screen)
@@ -317,11 +437,49 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--out", help="output PNG path (default <SYMBOL>.png)")
     c.add_argument("--days", type=int, default=400, help="history window (days)")
     c.add_argument("--bars", type=int, default=180, help="bars to plot")
+    c.add_argument("--timeframe", choices=tf_choices, default="daily",
+                   help="candle timeframe")
     c.set_defaults(func=cmd_chart)
+
+    # ---- watchlist ----
+    wl = sub.add_parser("watchlist", help="manage your personal watchlist")
+    wlsub = wl.add_subparsers(dest="action", required=True)
+    wlsub.add_parser("list", help="show the watchlist").set_defaults(
+        func=cmd_watchlist)
+    wa = wlsub.add_parser("add", help="add symbols")
+    wa.add_argument("symbols", nargs="+")
+    wa.set_defaults(func=cmd_watchlist)
+    wr = wlsub.add_parser("remove", help="remove symbols")
+    wr.add_argument("symbols", nargs="+")
+    wr.set_defaults(func=cmd_watchlist)
+    wlsub.add_parser("clear", help="empty the watchlist").set_defaults(
+        func=cmd_watchlist)
+    wi = wlsub.add_parser("import", help="import symbols from an NSE CSV")
+    wi.add_argument("csv", help="path to the NSE CSV (e.g. EQUITY_L.csv)")
+    wi.add_argument("--column", help="force a column name (else auto-detect)")
+    wi.add_argument("--replace", action="store_true",
+                    help="replace the watchlist instead of merging")
+    wi.set_defaults(func=cmd_watchlist)
+
+    # ---- scan (structural patterns) ----
+    sc = sub.add_parser("scan",
+                        help="scan for chart patterns (cup&handle, darvas, flag…)")
+    sc.add_argument("--universe", help="nifty50 | nifty100")
+    sc.add_argument("--symbols", help="comma-separated custom symbols")
+    sc.add_argument("--watchlist", action="store_true",
+                    help="scan your saved watchlist")
+    sc.add_argument("--timeframes", default="daily,weekly,monthly",
+                    help="comma list of daily,weekly,monthly")
+    sc.add_argument("--days", type=int, default=400, help="history window (days)")
+    sc.add_argument("--breakouts-only", action="store_true",
+                    help="only show patterns in breakout (not still forming)")
+    sc.set_defaults(func=cmd_scan)
 
     w = sub.add_parser("watch", help="live watchlist scanner (needs Kite)")
     w.add_argument("--universe", help="nifty50 | nifty100")
     w.add_argument("--symbols", help="comma-separated watchlist")
+    w.add_argument("--watchlist", action="store_true",
+                   help="use your saved watchlist")
     w.add_argument("--interval", type=int, default=300,
                    help="seconds between scans")
     w.add_argument("--always", action="store_true",
