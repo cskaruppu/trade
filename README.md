@@ -24,6 +24,7 @@ risk real money.
 | **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
+| **AI trade thesis** | Optional: Claude reads the numeric analysis and writes a structured, grounded trade thesis (bias / setup / evidence / plan / risk). |
 | **Pattern edge** | Backtest whether a chart pattern *historically worked* on a stock: hit‑rate, average forward return, target‑hit rate — evidence, not just a shape. |
 | **Confluence** | Rank stocks where **daily + weekly + monthly** signals agree, with one weighted conviction score. |
 | **Trade plan** | Auto entry / ATR stop / measured‑move target / position size from your capital and risk %. |
@@ -95,6 +96,9 @@ nsetrade confluence --watchlist --aligned-only
 # Auto trade plan (entry/stop/target/size)
 nsetrade plan RELIANCE --capital 200000 --risk 0.01
 
+# AI-written trade thesis (needs an Anthropic API key — see privacy note below)
+nsetrade thesis RELIANCE --confluence
+
 # List the patterns the toolkit knows about
 nsetrade patterns
 ```
@@ -153,6 +157,17 @@ You need [Python 3](https://www.python.org/downloads/) installed first (tick
 scripts\nsetrade.bat screen --universe nifty50 --top 15
 scripts\nsetrade.bat chart RELIANCE --out reliance.png
 ```
+
+### The AI thesis & your privacy
+
+Everything in this toolkit runs **fully offline** except one opt-in feature: the
+**AI trade thesis** (`nsetrade thesis` / the dashboard button). When you use it,
+a **compact numeric summary** of the analysis (signal, indicators, detected
+patterns + their historical edge, multi-timeframe verdicts) is sent to
+Anthropic's API and Claude writes the thesis. It **never sends raw price data**,
+and it only runs if you provide an Anthropic API key (`ai.api_key` in
+`config.yaml` or `ANTHROPIC_API_KEY`). Leave the key empty and the platform is
+100% local. Install with `pip install -e ".[ai]"`.
 
 ### Why this is private & secure
 

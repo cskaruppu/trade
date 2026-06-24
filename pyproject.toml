@@ -20,6 +20,7 @@ dependencies = [
 yfinance = ["yfinance>=0.2.30"]
 kite = ["kiteconnect>=4.2"]
 charts = ["matplotlib>=3.6"]
+ai = ["anthropic>=0.40"]
 dashboard = ["streamlit>=1.30", "matplotlib>=3.6", "plotly>=5.18"]
 dev = ["pytest>=7.0", "matplotlib>=3.6", "plotly>=5.18"]
 

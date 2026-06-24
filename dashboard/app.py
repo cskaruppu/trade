@@ -17,6 +17,7 @@ import streamlit as st
 
 from nsetrade import watchlist as wl
 from nsetrade.backtest import backtest_risk
+from nsetrade.ai import ThesisConfig, ThesisWriter, assemble_context
 from nsetrade.charts_interactive import build_figure
 from nsetrade.config import load_config, provider_config
 from nsetrade.confluence import confluence_for_frames
@@ -143,6 +144,28 @@ with tab_a:
                     st.code(plan.describe())
                 except Exception as exc:  # noqa: BLE001
                     st.caption(f"plan unavailable: {exc}")
+
+            # ---- AI thesis (opt-in; the one feature that leaves the machine) ----
+            st.divider()
+            tcfg = ThesisConfig.from_config(cfg)
+            if not tcfg.enabled:
+                st.caption("💡 Add an Anthropic API key (ai.api_key in config.yaml "
+                           "or ANTHROPIC_API_KEY) to get an AI-written trade thesis "
+                           "grounded in this analysis.")
+            elif st.button("🤖 Write AI trade thesis", key="ai_thesis"):
+                with st.spinner(f"Asking Claude ({tcfg.model})…"):
+                    try:
+                        frames = {t: _history(provider, symbol, days, t)
+                                  for t in ("daily", "weekly", "monthly")}
+                        ctx = assemble_context(symbol, df, timeframe=timeframe,
+                                               with_confluence_frames=frames,
+                                               capital=float(capital))
+                        thesis = ThesisWriter(tcfg).write(symbol, ctx)
+                        st.markdown(thesis)
+                        st.caption("AI-generated, grounded in the numbers above. "
+                                   "Educational only — not investment advice.")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"thesis failed: {exc}")
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not analyse {symbol}: {exc}")
 

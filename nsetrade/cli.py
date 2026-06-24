@@ -415,6 +415,42 @@ def cmd_plan(args, cfg):
     print("\n" + plan.describe())
 
 
+def cmd_thesis(args, cfg):
+    from .ai import ThesisConfig, ThesisWriter, assemble_context
+    from .data import get_provider
+    from .resample import resample_ohlcv, scale_period_days
+
+    tcfg = ThesisConfig.from_config(cfg)
+    if not tcfg.enabled:
+        raise SystemExit(
+            "AI thesis needs an Anthropic API key. Set ai.api_key in config.yaml "
+            "or export ANTHROPIC_API_KEY. (This sends a numeric summary to "
+            "Anthropic — it is the one feature that leaves your machine.)")
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+    tf = args.timeframe
+
+    # fetch daily once; build confluence frames if requested
+    daily = prov.history(args.symbol, period_days=scale_period_days(args.days, tf))
+    df = resample_ohlcv(daily, tf)
+    conf_frames = None
+    if args.confluence:
+        conf_frames = {t: resample_ohlcv(daily, t)
+                       for t in ("daily", "weekly", "monthly")}
+
+    ctx = assemble_context(args.symbol, df, timeframe=tf,
+                           with_confluence_frames=conf_frames,
+                           capital=args.capital, risk_pct=args.risk)
+    print(f"\nAsking Claude ({tcfg.model}) for a thesis on {args.symbol}…\n",
+          file=sys.stderr)
+    writer = ThesisWriter(tcfg)
+    print(f"=== AI trade thesis — {args.symbol} ({tf}) ===\n")
+    print(writer.write(args.symbol, ctx))
+    print("\n[AI-generated, grounded in the numeric summary above. "
+          "Educational only — not investment advice.]\n")
+
+
 def cmd_watch(args, cfg):
     from .alerts import AlertConfig
     from .live import watch
@@ -608,6 +644,21 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--timeframe", choices=tf_choices, default="daily",
                     help="candle timeframe")
     pl.set_defaults(func=cmd_plan)
+
+    # ---- thesis (AI-written) ----
+    th = sub.add_parser("thesis",
+                        help="AI-written trade thesis (needs an Anthropic API key)")
+    th.add_argument("symbol", help="NSE symbol, e.g. RELIANCE")
+    th.add_argument("--timeframe", choices=tf_choices, default="daily",
+                    help="candle timeframe")
+    th.add_argument("--confluence", action="store_true",
+                    help="include multi-timeframe confluence in the analysis")
+    th.add_argument("--days", type=int, default=500, help="history window (days)")
+    th.add_argument("--capital", type=float, default=100_000.0,
+                    help="account capital for the trade plan")
+    th.add_argument("--risk", type=float, default=0.01,
+                    help="fraction of capital risked per trade")
+    th.set_defaults(func=cmd_thesis)
 
     w = sub.add_parser("watch", help="live watchlist scanner (needs Kite)")
     w.add_argument("--universe", help="nifty50 | nifty100")

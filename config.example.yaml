@@ -21,6 +21,14 @@ providers:
 # Default screening universe: nifty50 | nifty100 | nifty500 | custom
 default_universe: nifty50
 
+# Optional AI trade thesis (Claude / Anthropic API). This is the ONE feature
+# that sends data off your machine — and only a compact numeric summary, never
+# raw prices. Leave api_key empty to keep everything fully local.
+# Get a key at https://console.anthropic.com (or set ANTHROPIC_API_KEY).
+ai:
+  api_key: ""
+  model: claude-opus-4-8
+
 # Optional alerting for the live `watch` scanner.
 alerts:
   console: true
