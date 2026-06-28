@@ -29,6 +29,7 @@ class PatternHit:
     edge_win_rate: Optional[float] = None
     edge_occurrences: Optional[int] = None
     edge_robust: Optional[bool] = None
+    volume_confirmed: Optional[bool] = None
     note: str = ""
 
     def as_row(self) -> dict:
@@ -36,6 +37,8 @@ class PatternHit:
             "symbol": self.symbol,
             "pattern": self.pattern,
             "status": self.status,
+            "vol": ("✓" if self.volume_confirmed else
+                    ("✗" if self.volume_confirmed is False else "-")),
             "close": round(self.close, 2),
             "breakout": round(self.breakout_level, 2) if self.breakout_level else None,
             "edge": (f"{self.edge_win_rate:.0%} / {self.edge_occurrences}"
@@ -55,12 +58,14 @@ def scan_for_patterns(
     period_days: int = 500,
     with_edge: bool = True,
     only_breakouts: bool = False,
+    only_volume_confirmed: bool = False,
     on_progress=None,
     _provider_obj=None,
 ):
     """Scan ``symbols`` for the requested patterns. Returns ``(hits, errors)``.
 
-    Pass ``_provider_obj`` to inject a provider in tests.
+    ``only_volume_confirmed`` keeps only breakouts backed by above-average
+    volume. Pass ``_provider_obj`` to inject a provider in tests.
     """
     from .ai import _pattern_key
     from .data import get_provider
@@ -81,9 +86,12 @@ def scan_for_patterns(
                     continue
                 if only_breakouts and m.status != "breakout":
                     continue
+                if only_volume_confirmed and not m.volume_confirmed:
+                    continue
                 hit = PatternHit(symbol=sym, pattern=m.name, direction=m.direction,
                                  status=m.status, breakout_level=m.breakout_level,
-                                 close=close, note=m.note)
+                                 close=close, volume_confirmed=m.volume_confirmed,
+                                 note=m.note)
                 if with_edge:
                     try:
                         from .edge import pattern_edge_validated
@@ -100,8 +108,9 @@ def scan_for_patterns(
         if on_progress:
             on_progress(i + 1, len(symbols), sym)
 
-    # best first: robust edge → higher win-rate → confirmed breakout
+    # best first: robust edge → volume-confirmed → higher win-rate → breakout
     hits.sort(key=lambda h: (h.edge_robust is True,
+                             h.volume_confirmed is True,
                              h.edge_win_rate if h.edge_win_rate is not None else -1,
                              h.status == "breakout"), reverse=True)
     return hits, errors

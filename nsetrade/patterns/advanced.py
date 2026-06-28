@@ -32,13 +32,34 @@ class PatternMatch:
     start: Optional[pd.Timestamp] = None
     end: Optional[pd.Timestamp] = None
     note: str = ""
+    volume_confirmed: Optional[bool] = None   # set for breakouts in detect_advanced
 
     def describe(self) -> str:
         if not self.found:
             return f"{self.name}: not detected"
         lvl = f" breakout>{self.breakout_level:.2f}" if self.breakout_level else ""
-        return (f"{self.name} [{self.direction}/{self.status}]{lvl}"
+        vol = ""
+        if self.volume_confirmed is not None:
+            vol = " vol✓" if self.volume_confirmed else " vol✗"
+        return (f"{self.name} [{self.direction}/{self.status}]{lvl}{vol}"
                 + (f" — {self.note}" if self.note else ""))
+
+
+def volume_confirms(df: pd.DataFrame, *, lookback: int = 50,
+                    mult: float = 1.3) -> Optional[bool]:
+    """Is the latest bar's volume above ``mult``× the prior ``lookback`` average?
+
+    A real breakout is backed by a surge in participation. Returns ``None`` if
+    there isn't enough volume history to judge.
+    """
+    if "volume" not in df or len(df) < lookback + 1:
+        return None
+    v = df["volume"].astype(float)
+    recent = float(v.iloc[-1])
+    avg = float(v.iloc[-lookback - 1:-1].mean())
+    if avg <= 0:
+        return None
+    return recent >= avg * mult
 
 
 def _na(name: str, note: str = "") -> PatternMatch:
@@ -654,6 +675,8 @@ def detect_advanced(df: pd.DataFrame, only_found: bool = True) -> list[PatternMa
             m = fn(df)
         except Exception:  # noqa: BLE001 - a detector should never break a scan
             continue
+        if m.found and m.status == "breakout":
+            m.volume_confirmed = volume_confirms(df)
         if m.found or not only_found:
             results.append(m)
     return results

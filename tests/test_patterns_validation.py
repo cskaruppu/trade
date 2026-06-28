@@ -45,6 +45,19 @@ def test_vcp_detected_on_contracting_base():
     assert "contractions" in m.note
 
 
+def test_volume_confirms_detects_surge():
+    from nsetrade.patterns.advanced import volume_confirms
+    base = frame(np.linspace(90, 110, 80))
+    base["volume"] = 1000.0
+    # latest bar volume spikes → confirmed
+    base.iloc[-1, base.columns.get_loc("volume")] = 5000.0
+    assert volume_confirms(base, lookback=50, mult=1.3) is True
+    # flat volume → not confirmed
+    flat = frame(np.linspace(90, 110, 80))
+    flat["volume"] = 1000.0
+    assert volume_confirms(flat, lookback=50, mult=1.3) is False
+
+
 def test_vcp_rejects_widening_pullbacks():
     # pullbacks getting DEEPER (not a VCP)
     seg = []

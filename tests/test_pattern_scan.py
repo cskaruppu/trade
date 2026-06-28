@@ -72,6 +72,22 @@ def test_as_row_shape(monkeypatch):
     hits, _ = pattern_scan.scan_for_patterns(["AAA"], with_edge=False,
                                              _provider_obj=prov)
     row = hits[0].as_row()
-    assert set(["symbol", "pattern", "status", "close", "breakout", "edge",
-                "robust"]) <= row.keys()
+    assert set(["symbol", "pattern", "status", "vol", "close", "breakout",
+                "edge", "robust"]) <= row.keys()
     assert row["edge"] == "-"        # edge disabled
+
+
+def test_only_volume_confirmed_filter(monkeypatch):
+    fake = [
+        PatternMatch(name="Cup & Handle", found=True, direction="bullish",
+                     status="breakout", breakout_level=105.0, volume_confirmed=True),
+        PatternMatch(name="Darvas Box", found=True, direction="bullish",
+                     status="breakout", breakout_level=100.0, volume_confirmed=False),
+    ]
+    monkeypatch.setattr("nsetrade.patterns.detect_advanced", lambda df: fake)
+    prov = _FakeProvider({"AAA": frame(np.linspace(90, 110, 200))})
+    hits, _ = pattern_scan.scan_for_patterns(
+        ["AAA"], ["cup_and_handle", "darvas_box"], with_edge=False,
+        only_volume_confirmed=True, _provider_obj=prov)
+    assert [h.pattern for h in hits] == ["Cup & Handle"]   # the vol-confirmed one
+    assert hits[0].as_row()["vol"] == "✓"

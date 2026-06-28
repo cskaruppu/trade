@@ -214,8 +214,14 @@ if _page == "🏆 Pattern Picks":
                              default=["Cup & Handle", "Darvas Box"], key="pp_pat")
     pp_uni = pp1.selectbox("Universe", list_universes(), index=0, key="pp_uni")
     pp_brk = pp2.checkbox("Confirmed breakouts only", value=False, key="pp_brk")
+    pp_vol = pp2.checkbox("Volume-confirmed only", value=False, key="pp_vol",
+                          help="breakout backed by above-average volume")
     pp_edge = pp2.checkbox("Score historical edge", value=True, key="pp_edge",
                            help="backtests each pattern on each stock; slower")
+
+    from nsetrade.scan_cache import ScanCache
+    _pp_cache = ScanCache()
+
     if st.button("Scan for patterns", type="primary", disabled=not chosen):
         from nsetrade.pattern_scan import scan_for_patterns
         keys = [_PAT_CHOICES[c] for c in chosen]
@@ -225,12 +231,33 @@ if _page == "🏆 Pattern Picks":
             syms, keys, provider=provider,
             provider_config=provider_config(cfg, provider),
             with_edge=pp_edge, only_breakouts=pp_brk,
+            only_volume_confirmed=pp_vol,
             on_progress=lambda d, t, s: prog.progress(d / t, text=s))
         prog.empty()
-        st.session_state["pp_hits"] = [h.as_row() for h in hits]
+        rows = [h.as_row() for h in hits]
+        st.session_state["pp_hits"] = rows
         st.session_state["pp_syms"] = [h.symbol for h in hits]
+        st.session_state["pp_when"] = None
+        # cache so the page auto-loads these next time it's opened
+        _pp_cache.save_run("patterns", pp_uni, rows, meta={"patterns": chosen})
+        _pp_cache.prune(keep_per_key=5)
+
+    # auto-load the latest cached scan for this universe if we haven't scanned
+    # live this session
+    if "pp_hits" not in st.session_state:
+        hit = _pp_cache.latest("patterns", pp_uni)
+        if hit and hit["rows"]:
+            from datetime import datetime
+            st.session_state["pp_hits"] = hit["rows"]
+            st.session_state["pp_syms"] = [r["symbol"] for r in hit["rows"]]
+            st.session_state["pp_when"] = datetime.fromtimestamp(
+                hit["created_at"]).strftime("%d %b %H:%M")
 
     hits_rows = st.session_state.get("pp_hits")
+    _pp_when = st.session_state.get("pp_when")
+    if _pp_when:
+        st.info(f"Auto-loaded your last scan from **{_pp_when}**. "
+                "Click *Scan for patterns* to refresh.")
     if hits_rows is not None:
         if not hits_rows:
             st.warning("No matching patterns found on this universe.")

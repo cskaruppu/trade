@@ -18,7 +18,7 @@ if not exist .venv\Scripts\activate.bat (
 )
 call .venv\Scripts\activate.bat
 
-echo [nsetrade] Precomputing long opportunities for nifty100...
-nsetrade precompute --universe nifty100 --side long
+echo [nsetrade] Precomputing opportunities + pattern picks for nifty100...
+nsetrade precompute --universe nifty100 --side long --with-patterns
 
 echo [nsetrade] Done. Open the dashboard and tick "use cached scan".

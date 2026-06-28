@@ -463,8 +463,22 @@ def cmd_precompute(args, cfg):
                          "scanned": len(symbols)})
     cache.prune(keep_per_key=5)
     print(f"\nCached {len(rows)} ranked {args.side} setups for '{universe}' "
-          f"({len(result.errors)} symbols errored).\n"
-          f"View instantly in the dashboard or with:\n"
+          f"({len(result.errors)} symbols errored).")
+
+    if getattr(args, "with_patterns", False):
+        from .pattern_scan import DEFAULT_PATTERNS, scan_for_patterns
+        print("Caching pattern picks (cup & handle, darvas box, vcp)…",
+              file=sys.stderr)
+        hits, _ = scan_for_patterns(
+            symbols, DEFAULT_PATTERNS + ["vcp"], provider=provider,
+            provider_config=pconf, on_progress=progress)
+        print("", file=sys.stderr)
+        cache.save_run("patterns", universe, [h.as_row() for h in hits],
+                       meta={"patterns": ["Cup & Handle", "Darvas Box", "VCP"]})
+        cache.prune(keep_per_key=5)
+        print(f"Cached {len(hits)} pattern picks for '{universe}'.")
+
+    print(f"\nView instantly in the dashboard or with:\n"
           f"  nsetrade opportunities --universe {universe} --side {args.side} --cached")
 
 
@@ -797,6 +811,8 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--days", type=int, default=500, help="history window (days)")
     pc.add_argument("--no-edge", action="store_true",
                     help="skip the pattern-edge backtest (much faster)")
+    pc.add_argument("--with-patterns", action="store_true",
+                    help="also cache Pattern Picks (cup & handle, darvas, vcp)")
     pc.add_argument("--db", help="scan cache path (default ~/.nsetrade/scans.db)")
     pc.set_defaults(func=cmd_precompute)
 
