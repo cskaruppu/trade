@@ -40,6 +40,34 @@ _SYSTEM = (
 )
 
 
+_OPP_SYSTEM = (
+    "You are a disciplined technical analyst for Indian (NSE) equities. "
+    "You are given a pre-ranked shortlist of trade candidates, each with its "
+    "multi-timeframe conviction, the chart pattern present, that pattern's "
+    "HISTORICAL win-rate on this stock, and reward:risk. "
+    "Give a portfolio-level read: pick the 2-3 highest-quality setups and say "
+    "why (lean on the evidence — conviction + pattern edge + R:R), flag any that "
+    "look weak despite ranking (e.g. tiny pattern sample), and note what to wait "
+    "for before entering. Ground everything in the numbers given — invent "
+    "nothing. Be concise (under 200 words). This is educational analysis, not "
+    "investment advice, and past pattern stats do not guarantee future results."
+)
+
+
+def build_opportunities_prompt(opportunities, side: str = "long") -> str:
+    """Pure prompt builder for the opportunity-shortlist summary."""
+    lines = [f"Ranked {side} candidates (best first):"]
+    for i, o in enumerate(opportunities, 1):
+        row = o.as_row() if hasattr(o, "as_row") else o
+        lines.append(
+            f"{i}. {row['symbol']}: score {row['score']}, "
+            f"conviction {row['conviction']} ({row['aligned']}), "
+            f"pattern {row['pattern']} (edge {row['edge']}), "
+            f"R:R {row['rr']}, signal {row['verdict']}")
+    lines.append("\nGive the portfolio-level read now.")
+    return "\n".join(lines)
+
+
 @dataclass
 class ThesisConfig:
     api_key: Optional[str] = None
@@ -129,11 +157,18 @@ class ThesisWriter:
     def write(self, symbol: str, context: dict) -> str:
         """Generate a trade thesis. Returns the model's text."""
         prompt = build_prompt(symbol, context)
+        return self._send(_SYSTEM, prompt)
+
+    def summarize_opportunities(self, opportunities, side: str = "long") -> str:
+        """Give a portfolio-level read over a ranked opportunity list."""
+        return self._send(_OPP_SYSTEM, build_opportunities_prompt(opportunities, side))
+
+    def _send(self, system: str, prompt: str) -> str:
         resp = self._client.messages.create(
             model=self.config.model,
             max_tokens=2000,
             thinking={"type": "adaptive"},
-            system=_SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
         )
         # response.content is a list of blocks; collect the text blocks only

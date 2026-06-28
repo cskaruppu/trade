@@ -16,5 +16,7 @@ if not exist .venv\Scripts\activate.bat (
 
 call .venv\Scripts\activate.bat
 echo [nsetrade] Starting dashboard at http://localhost:8501  (Ctrl+C to stop)
+REM Open the browser a few seconds after the server starts (headless mode is on).
+start "" /b cmd /c "timeout /t 4 >nul & start http://localhost:8501"
 streamlit run dashboard\app.py
 pause

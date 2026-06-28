@@ -83,10 +83,67 @@ timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
 st.sidebar.caption("Kite credentials come from config.yaml. yfinance needs none.")
 st.sidebar.warning("Research/education only — not investment advice.")
 
-tab_a, tab_w, tab_c, tab_e, tab_s, tab_b = st.tabs(
-    ["📊 Analyse", "⭐ Watchlist", "🎯 Confluence", "🧪 Pattern Edge",
-     "🔎 Screener", "📈 Backtest"]
+tab_o, tab_a, tab_w, tab_c, tab_e, tab_s, tab_b = st.tabs(
+    ["🚀 Opportunities", "📊 Analyse", "⭐ Watchlist", "🎯 Confluence",
+     "🧪 Pattern Edge", "🔎 Screener", "📈 Backtest"]
 )
+
+
+# ---- Top Opportunities -----------------------------------------------------
+with tab_o:
+    st.subheader("Top trade opportunities")
+    st.caption("Ranks each stock by **multi-timeframe conviction + historical "
+               "pattern edge + reward:risk** — the highest-conviction, "
+               "evidence-based setups. Probability, not a profit guarantee.")
+    oc1, oc2, oc3 = st.columns([2, 1, 1])
+    o_src = oc1.radio("Source", ["Universe", "My watchlist"], horizontal=True,
+                      key="opp_src")
+    o_uni = oc1.selectbox("Universe", list(UNIVERSES), index=0,
+                          disabled=(o_src != "Universe"), key="opp_uni")
+    o_side = oc2.radio("Side", ["long", "short"], horizontal=True, key="opp_side")
+    o_top = oc3.slider("Show top", 5, 40, 15, step=5, key="opp_top")
+    o_edge = oc2.checkbox("Include pattern edge", value=True, key="opp_edge",
+                          help="backtests each pattern's history; slower but "
+                               "stronger evidence")
+    if st.button("Find opportunities", type="primary"):
+        from nsetrade.opportunities import rank_opportunities
+        syms = wl.load() if o_src == "My watchlist" else get_universe(o_uni)
+        if not syms:
+            st.warning("No symbols to scan.")
+        else:
+            prog = st.progress(0.0)
+            res = rank_opportunities(
+                syms, provider=provider,
+                provider_config=provider_config(cfg, provider),
+                side=o_side, with_edge=o_edge, top=o_top,
+                on_progress=lambda d, t, s: prog.progress(d / t, text=s))
+            prog.empty()
+            st.session_state["opp_result"] = res
+        # fall through to render below
+
+    res = st.session_state.get("opp_result")
+    if res is not None:
+        df = res.to_frame()
+        if df.empty:
+            st.warning("No opportunities found on this universe/side.")
+        else:
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.caption("score=composite · conviction=multi-timeframe trend · "
+                       "edge=pattern win-rate/sample · rr=reward:risk")
+            tcfg = ThesisConfig.from_config(cfg)
+            if not tcfg.enabled:
+                st.caption("💡 Add an Anthropic API key to get an AI portfolio "
+                           "read over these candidates.")
+            elif st.button("🤖 AI portfolio read", key="opp_ai"):
+                with st.spinner(f"Asking Claude ({tcfg.model})…"):
+                    try:
+                        st.markdown(ThesisWriter(tcfg).summarize_opportunities(
+                            res.opportunities, side=res.opportunities[0].side
+                            if res.opportunities else "long"))
+                        st.caption("AI-generated, grounded in the table above. "
+                                   "Educational only — not investment advice.")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"AI read failed: {exc}")
 
 
 # ---- Analyse ---------------------------------------------------------------

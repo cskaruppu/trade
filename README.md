@@ -24,7 +24,8 @@ risk real money.
 | **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
-| **AI trade thesis** | Optional: Claude reads the numeric analysis and writes a structured, grounded trade thesis (bias / setup / evidence / plan / risk). |
+| **Opportunity ranker** | Scans a whole universe and ranks the most tradeable setups by **conviction + historical pattern edge + reward:risk** — surfaces the best evidence‑based candidates (probability, not a profit promise). |
+| **AI trade thesis** | Optional: Claude reads the numeric analysis and writes a structured, grounded trade thesis (bias / setup / evidence / plan / risk), and can give a portfolio‑level read over the ranked opportunities. |
 | **Pattern edge** | Backtest whether a chart pattern *historically worked* on a stock: hit‑rate, average forward return, target‑hit rate — evidence, not just a shape. |
 | **Confluence** | Rank stocks where **daily + weekly + monthly** signals agree, with one weighted conviction score. |
 | **Trade plan** | Auto entry / ATR stop / measured‑move target / position size from your capital and risk %. |
@@ -96,6 +97,10 @@ nsetrade confluence --watchlist --aligned-only
 # Auto trade plan (entry/stop/target/size)
 nsetrade plan RELIANCE --capital 200000 --risk 0.01
 
+# Rank the best tradeable setups across a universe (add --ai for a Claude read)
+nsetrade opportunities --universe nifty50 --top 15
+nsetrade opportunities --universe nifty50 --side short --ai
+
 # AI-written trade thesis (needs an Anthropic API key — see privacy note below)
 nsetrade thesis RELIANCE --confluence
 
@@ -149,8 +154,15 @@ It installs Python deps into a local `.venv` and creates your `config.yaml`.
 You need [Python 3](https://www.python.org/downloads/) installed first (tick
 *"Add Python to PATH"* in the installer).
 
-**Run the dashboard** — double-click `scripts\run_dashboard.bat`, then open
-**http://localhost:8501** in your browser. Stop it with `Ctrl+C`.
+**Run the dashboard** — double-click `scripts\run_dashboard.bat`. It starts the
+server and opens **http://localhost:8501** in your browser automatically. Stop
+it with `Ctrl+C`. No PowerShell typing needed.
+
+**Launch it without finding the file each time** — double-click
+`scripts\create_shortcut.bat` once to put a **"nsetrade Dashboard"** shortcut on
+your Desktop. After that it's a single double-click. To open it automatically
+**every time Windows starts**, press `Win+R`, type `shell:startup`, Enter, and
+copy that Desktop shortcut into the folder that opens.
 
 **Run CLI commands** — use `scripts\nsetrade.bat`, e.g.:
 ```bat

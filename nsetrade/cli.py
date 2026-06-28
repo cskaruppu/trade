@@ -415,6 +415,52 @@ def cmd_plan(args, cfg):
     print("\n" + plan.describe())
 
 
+def cmd_opportunities(args, cfg):
+    from .opportunities import rank_opportunities
+
+    provider, pconf = _resolve_provider(args, cfg)
+    symbols = _resolve_symbols(args, cfg)
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    result = rank_opportunities(
+        symbols, provider=provider, provider_config=pconf,
+        period_days=args.days, side=args.side, with_edge=not args.no_edge,
+        top=args.top, on_progress=progress)
+    print("", file=sys.stderr)
+
+    df = result.to_frame()
+    if df.empty:
+        print("No opportunities found.")
+        if result.errors:
+            print(f"({len(result.errors)} symbols errored; "
+                  f"e.g. {next(iter(result.errors))})")
+        return
+
+    print(f"\nTop {len(df)} {args.side.upper()} opportunities "
+          f"(conviction + historical pattern edge + reward:risk):\n")
+    _print_table(df)
+    print("\nColumns: score=composite, conviction=multi-timeframe trend, "
+          "edge=pattern win-rate/sample, rr=reward:risk.")
+    print("Evidence-based ranking — NOT a profit guarantee. Small pattern "
+          "samples are noisy; always manage risk.")
+
+    if args.ai:
+        from .ai import ThesisConfig, ThesisWriter
+        tcfg = ThesisConfig.from_config(cfg)
+        if not tcfg.enabled:
+            print("\n[--ai needs an Anthropic API key; skipping AI summary]")
+            return
+        print(f"\nAsking Claude ({tcfg.model}) for a portfolio read…\n",
+              file=sys.stderr)
+        print("=== AI portfolio read ===\n")
+        print(ThesisWriter(tcfg).summarize_opportunities(
+            result.opportunities, side=args.side))
+        print("\n[AI-generated, grounded in the table above. "
+              "Educational only — not investment advice.]")
+
+
 def cmd_thesis(args, cfg):
     from .ai import ThesisConfig, ThesisWriter, assemble_context
     from .data import get_provider
@@ -534,6 +580,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--bullish-only", action="store_true",
                    help="hide bearish table")
     s.set_defaults(func=cmd_screen)
+
+    # ---- opportunities (ranked tradeable setups) ----
+    op = sub.add_parser("opportunities", aliases=["opps"],
+                        help="rank the most tradeable setups across a universe")
+    op.add_argument("--universe", help="nifty50 | nifty100 | nifty500")
+    op.add_argument("--symbols", help="comma-separated custom symbols")
+    op.add_argument("--watchlist", action="store_true",
+                    help="use your saved watchlist instead of a universe")
+    op.add_argument("--side", choices=["long", "short"], default="long",
+                    help="rank long (default) or short setups")
+    op.add_argument("--top", type=int, default=15, help="how many to show")
+    op.add_argument("--days", type=int, default=500, help="history window (days)")
+    op.add_argument("--no-edge", action="store_true",
+                    help="skip the historical pattern-edge backtest (faster)")
+    op.add_argument("--ai", action="store_true",
+                    help="add a Claude portfolio read (needs an API key)")
+    op.set_defaults(func=cmd_opportunities)
 
     b = sub.add_parser("backtest",
                        help="backtest a strategy (risk-managed by default)")

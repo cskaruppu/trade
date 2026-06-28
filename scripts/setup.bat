@@ -22,7 +22,7 @@ echo [nsetrade] Upgrading pip...
 python -m pip install --upgrade pip >nul
 
 echo [nsetrade] Installing nsetrade and all extras (this can take a minute)...
-pip install -e ".[yfinance,charts,dashboard,kite]"
+pip install -e ".[yfinance,charts,dashboard,kite,ai]"
 if errorlevel 1 (
     echo ERROR: installation failed. See the messages above.
     pause
