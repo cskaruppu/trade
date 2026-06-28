@@ -345,27 +345,55 @@ if _page == "🏆 Pattern Picks":
             st.dataframe(hits_rows, use_container_width=True, hide_index=True)
             st.caption("edge = win-rate / past occurrences · robust ✓ = the edge "
                        "held on data it never saw. Probability, not a guarantee.")
+
+            # ---- view a pick's chart with the pattern drawn on it ----
+            st.divider()
+            st.markdown("### 📈 View the chart with the pattern marked")
+            psel = st.selectbox("Pick a stock from the results above",
+                                st.session_state["pp_syms"], key="pp_sel")
+            pdaily = None
+            if psel:
+                try:
+                    pdaily = _daily(provider, psel, 500)
+                    pfig, pnotes = build_figure(f"{psel} · daily", pdaily, bars=220,
+                                                show_patterns=True, show_fib=False)
+                    st.plotly_chart(pfig, use_container_width=True,
+                                    config={"scrollZoom": True, "displaylogo": False})
+                    if pnotes:
+                        st.caption("Drawn on the chart — breakout level (dashed) and "
+                                   "the pattern's range (shaded): "
+                                   + " · ".join(pnotes))
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"could not draw {psel}: {exc}")
+
             _tcfg_pp = ThesisConfig.from_config(cfg)
-            if not _tcfg_pp.enabled:
-                st.caption("💡 Add an Anthropic API key for an AI investment "
-                           "suggestion on any of these.")
-            else:
-                psel = st.selectbox("AI suggestion for", st.session_state["pp_syms"],
-                                    key="pp_sel")
-                if st.button("🤖 Analyse this pattern & suggest", key="pp_ai"):
+            if pdaily is not None and not _tcfg_pp.enabled:
+                st.caption("💡 Add an Anthropic API key for an AI read of this "
+                           "pattern (text analysis + a vision read of the chart).")
+            elif pdaily is not None:
+                ac1, ac2 = st.columns(2)
+                if ac1.button("🤖 AI pattern analysis & suggestion", key="pp_ai"):
                     with st.spinner(f"Claude ({_tcfg_pp.model}) is analysing {psel}…"):
                         try:
-                            daily = _daily(provider, psel, 500)
-                            frames = {t: resample_ohlcv(daily, t)
+                            frames = {t: resample_ohlcv(pdaily, t)
                                       for t in ("daily", "weekly", "monthly")}
-                            ctx = assemble_context(psel, daily,
+                            ctx = assemble_context(psel, pdaily,
                                                    with_confluence_frames=frames)
                             st.markdown(ThesisWriter(_tcfg_pp).write(psel, ctx))
-                            st.caption("AI-generated, grounded in the pattern + its "
-                                       "historical edge. Educational only — not "
-                                       "investment advice.")
+                            st.caption("Grounded in the pattern + its historical "
+                                       "edge. Educational only — not advice.")
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"analysis failed: {exc}")
+                if ac2.button("👁 AI chart read (vision)", key="pp_vision"):
+                    with st.spinner(f"Claude is reading {psel}'s chart…"):
+                        try:
+                            from nsetrade.charts import render_chart_bytes
+                            png = render_chart_bytes(f"{psel}", pdaily, bars=200)
+                            st.markdown(ThesisWriter(_tcfg_pp).read_chart(png, psel))
+                            st.caption("AI vision read of the chart image. "
+                                       "Educational only — not advice.")
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"chart read failed: {exc}")
 
 
 # ---- Breakouts (new N-period high scanner) ---------------------------------
