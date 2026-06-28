@@ -33,6 +33,7 @@ class PatternMatch:
     end: Optional[pd.Timestamp] = None
     note: str = ""
     volume_confirmed: Optional[bool] = None   # set for breakouts in detect_advanced
+    overlays: Optional[list] = None           # drawable shapes (curve/line) for charts
 
     def describe(self) -> str:
         if not self.found:
@@ -64,6 +65,37 @@ def volume_confirms(df: pd.DataFrame, *, lookback: int = 50,
 
 def _na(name: str, note: str = "") -> PatternMatch:
     return PatternMatch(name=name, found=False, note=note)
+
+
+def _pos_to_dates(index: pd.DatetimeIndex, positions):
+    """Map positional indices to actual timestamps (rounded + clamped)."""
+    out = []
+    for p in positions:
+        k = max(0, min(len(index) - 1, int(round(float(p)))))
+        out.append(index[k])
+    return out
+
+
+def _quad_curve(index, prices, i0, imid, i1):
+    """A smooth parabola through three positional anchors → a drawable curve.
+
+    Used to trace the rounded "U" of a cup. Sampled at each integer bar between
+    the rims (exact dates), then drawn with a spline for smoothness.
+    """
+    xs = np.array([i0, imid, i1], float)
+    ys = np.array([prices[i0], prices[imid], prices[i1]], float)
+    coeffs = np.polyfit(xs, ys, 2)
+    ks = list(range(int(i0), int(i1) + 1))
+    return {"kind": "spline",
+            "x": [index[k] for k in ks],
+            "y": [float(np.polyval(coeffs, k)) for k in ks]}
+
+
+def _line(index, prices, i0, i1):
+    """A straight line between two positional anchors (rim, neckline, …)."""
+    return {"kind": "line",
+            "x": _pos_to_dates(index, [i0, i1]),
+            "y": [float(prices[i0]), float(prices[i1])]}
 
 
 # --------------------------------------------------------------------------
@@ -177,6 +209,12 @@ def detect_cup_and_handle(
     last = float(close[-1])
     status = "breakout" if (found and last >= rim * 0.99) else (
         "forming" if found else "none")
+    overlays = None
+    if found:
+        overlays = [
+            _quad_curve(win.index, close, lr, b, rr),   # the rounded cup "U"
+            _line(win.index, close, lr, rr),            # the rim (resistance) line
+        ]
     return PatternMatch(
         name=name,
         found=found,
@@ -188,6 +226,7 @@ def detect_cup_and_handle(
         start=win.index[lr],
         end=df.index[-1],
         note=f"depth {depth:.0%}, handle retrace {handle_retrace:.0%}",
+        overlays=overlays,
     )
 
 
@@ -347,11 +386,21 @@ def detect_double_bottom(
             if peak <= max(la, lb):
                 continue
             status = "breakout" if close >= peak * 0.99 else "forming"
+            peak_idx = i + int(np.argmax(high_vals[i:j + 1]))
+            overlays = [
+                {"kind": "line",                       # the W: low → peak → low
+                 "x": _pos_to_dates(win.index, [i, peak_idx, j]),
+                 "y": [float(la), float(peak), float(lb)]},
+                {"kind": "line",                       # neckline (breakout level)
+                 "x": _pos_to_dates(win.index, [i, len(win) - 1]),
+                 "y": [float(peak), float(peak)]},
+            ]
             return PatternMatch(
                 name=name, found=True, direction="bullish", status=status,
                 breakout_level=peak, support=float(min(la, lb)), resistance=peak,
                 start=win.index[i], end=df.index[-1],
                 note=f"bottoms ~{(la + lb) / 2:.1f}, neckline {peak:.1f}",
+                overlays=overlays,
             )
     return _na(name)
 
@@ -490,11 +539,19 @@ def detect_head_shoulders(
                 neck = (t1 + t2) / 2.0
                 if 0 < neck < min(lsh, rsh):
                     status = "breakout" if close <= neck * 1.01 else "forming"
+                    overlays = [
+                        {"kind": "line",               # shoulders + head outline
+                         "x": _pos_to_dates(win.index, [ls, hd, rs]),
+                         "y": [float(lsh), float(hdh), float(rsh)]},
+                        {"kind": "line",               # neckline
+                         "x": _pos_to_dates(win.index, [ls, len(win) - 1]),
+                         "y": [float(neck), float(neck)]},
+                    ]
                     return PatternMatch(
                         name=name, found=True, direction="bearish", status=status,
                         breakout_level=neck, support=neck, resistance=float(hdh),
                         start=win.index[ls], end=df.index[-1],
-                        note=f"head {hdh:.1f}, neckline {neck:.1f}")
+                        note=f"head {hdh:.1f}, neckline {neck:.1f}", overlays=overlays)
 
     # bullish inverse: last three swing lows, middle lowest
     if len(lows) >= 3:

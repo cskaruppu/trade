@@ -45,6 +45,38 @@ def test_vcp_detected_on_contracting_base():
     assert "contractions" in m.note
 
 
+def test_cup_overlays_trace_the_shape():
+    from nsetrade.patterns.advanced import detect_cup_and_handle
+    n = 180
+    close = np.zeros(n)
+    close[:10] = np.linspace(298, 300, 10)
+    close[10:90] = 300 - 90 * np.sin(np.linspace(0, np.pi / 2, 80))
+    close[90:165] = 210 + 88 * np.sin(np.linspace(0, np.pi / 2, 75))
+    close[165:] = np.linspace(298, 290, 15)
+    m = detect_cup_and_handle(frame(close))
+    assert m.found
+    assert m.overlays and len(m.overlays) == 2
+    curve, rim = m.overlays
+    assert curve["kind"] == "spline"
+    # the cup curve dips to the bottom then returns to the rim
+    assert min(curve["y"]) < 230 < max(curve["y"])
+    # dates are real timestamps (not the 1970 epoch bug)
+    assert curve["x"][0].year >= 2019
+    assert rim["kind"] == "line" and len(rim["y"]) == 2
+
+
+def test_overlays_render_in_chart_without_error():
+    from nsetrade.charts_interactive import build_figure
+    n = 180
+    close = np.concatenate([
+        np.linspace(298, 300, 10),
+        300 - 90 * np.sin(np.linspace(0, np.pi / 2, 80)),
+        210 + 88 * np.sin(np.linspace(0, np.pi / 2, 75)),
+        np.linspace(298, 290, 15)])
+    fig, notes = build_figure("TEST", frame(close), bars=200, show_patterns=True)
+    assert len(fig.data) > 0
+
+
 def test_volume_confirms_detects_surge():
     from nsetrade.patterns.advanced import volume_confirms
     base = frame(np.linspace(90, 110, 80))

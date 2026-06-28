@@ -94,6 +94,18 @@ def build_figure(
                         row=1, col=1)
                 except Exception:  # noqa: BLE001 - overlay is best-effort
                     pass
+            # draw the pattern's actual shape (cup U-curve, W, neckline, …)
+            for ov in (getattr(m, "overlays", None) or []):
+                try:
+                    fig.add_trace(go.Scatter(
+                        x=ov["x"], y=ov["y"], mode="lines",
+                        line=dict(color="#e6e9ef", width=2,
+                                  shape="spline" if ov.get("kind") == "spline"
+                                  else "linear"),
+                        name=m.name, showlegend=False, hoverinfo="skip"),
+                        row=1, col=1)
+                except Exception:  # noqa: BLE001 - overlay is best-effort
+                    pass
 
     # ---- Fibonacci retracement overlay ----
     if show_fib:
