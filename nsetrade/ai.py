@@ -274,4 +274,8 @@ def _pattern_key(name: str) -> Optional[str]:
         return "double_top"
     if "triangle" in n:
         return "triangle"
+    if "head" in n and "shoulder" in n:
+        return "head_shoulders"
+    if "wedge" in n:
+        return "wedge"
     return next((k for k in ADVANCED_DETECTORS if k in n), None)

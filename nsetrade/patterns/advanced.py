@@ -434,6 +434,122 @@ def detect_triangle(
 
 
 # --------------------------------------------------------------------------
+# Head & Shoulders (bearish) + Inverse H&S (bullish)
+# --------------------------------------------------------------------------
+
+
+def detect_head_shoulders(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 160,
+    shoulder_tol: float = 0.06,
+    min_separation: int = 4,
+) -> PatternMatch:
+    """Three peaks with a higher middle (head) and similar shoulders, broken at
+    the neckline (the two troughs) → bearish. The mirror image (three troughs,
+    lower middle) is the bullish Inverse Head & Shoulders.
+    """
+    name = "Head & Shoulders"
+    win = df.tail(lookback)
+    if len(win) < 40:
+        return _na(name, "not enough bars")
+    highs, lows = _swings(win)
+    hv, lv = win["high"].values, win["low"].values
+    close = float(win["close"].iloc[-1])
+
+    # bearish: last three swing highs, middle highest, shoulders similar
+    if len(highs) >= 3:
+        ls, hd, rs = highs[-3], highs[-2], highs[-1]
+        if rs - ls >= 2 * min_separation:
+            lsh, hdh, rsh = hv[ls], hv[hd], hv[rs]
+            if (hdh > lsh and hdh > rsh and min(lsh, rsh) > 0
+                    and abs(lsh - rsh) / min(lsh, rsh) <= shoulder_tol):
+                t1 = float(lv[ls:hd + 1].min())
+                t2 = float(lv[hd:rs + 1].min())
+                neck = (t1 + t2) / 2.0
+                if 0 < neck < min(lsh, rsh):
+                    status = "breakout" if close <= neck * 1.01 else "forming"
+                    return PatternMatch(
+                        name=name, found=True, direction="bearish", status=status,
+                        breakout_level=neck, support=neck, resistance=float(hdh),
+                        start=win.index[ls], end=df.index[-1],
+                        note=f"head {hdh:.1f}, neckline {neck:.1f}")
+
+    # bullish inverse: last three swing lows, middle lowest
+    if len(lows) >= 3:
+        ls, hd, rs = lows[-3], lows[-2], lows[-1]
+        if rs - ls >= 2 * min_separation:
+            lsl, hdl, rsl = lv[ls], lv[hd], lv[rs]
+            if (hdl < lsl and hdl < rsl and min(lsl, rsl) > 0
+                    and abs(lsl - rsl) / min(lsl, rsl) <= shoulder_tol):
+                p1 = float(hv[ls:hd + 1].max())
+                p2 = float(hv[hd:rs + 1].max())
+                neck = (p1 + p2) / 2.0
+                if neck > max(lsl, rsl):
+                    status = "breakout" if close >= neck * 0.99 else "forming"
+                    return PatternMatch(
+                        name="Inverse Head & Shoulders", found=True,
+                        direction="bullish", status=status, breakout_level=neck,
+                        support=float(hdl), resistance=neck,
+                        start=win.index[ls], end=df.index[-1],
+                        note=f"head {hdl:.1f}, neckline {neck:.1f}")
+    return _na(name)
+
+
+# --------------------------------------------------------------------------
+# Wedge (rising = bearish, falling = bullish)
+# --------------------------------------------------------------------------
+
+
+def detect_wedge(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 90,
+    conv_ratio: float = 0.7,
+) -> PatternMatch:
+    """Two converging trendlines. Rising wedge (both lines sloping up, gap
+    narrowing) breaks down → bearish; falling wedge (both sloping down) breaks
+    up → bullish.
+    """
+    name = "Wedge"
+    win = df.tail(lookback)
+    if len(win) < 30:
+        return _na(name, "not enough bars")
+    highs, lows = _swings(win)
+    if len(highs) < 3 or len(lows) < 3:
+        return _na(name)
+    hv, lv = win["high"].values, win["low"].values
+    hi, lo = highs[-3:], lows[-3:]
+    sh = [float(hv[i]) for i in hi]
+    sl = [float(lv[i]) for i in lo]
+    close = float(win["close"].iloc[-1])
+
+    def _slope(idx, val):
+        return (val[-1] - val[0]) / max(idx[-1] - idx[0], 1)
+
+    sh_sl, sl_sl = _slope(hi, sh), _slope(lo, sl)
+    gap_start = sh[0] - sl[0]
+    gap_end = sh[-1] - sl[-1]
+    converging = 0 < gap_end < conv_ratio * gap_start
+
+    if converging and sh_sl > 0 and sl_sl > 0:  # rising wedge → bearish
+        line = sl[-1]
+        status = "breakout" if close <= line else "forming"
+        return PatternMatch(
+            name="Rising Wedge", found=True, direction="bearish", status=status,
+            breakout_level=float(line), support=float(line), resistance=float(sh[-1]),
+            start=win.index[hi[0]], end=df.index[-1], note="converging, sloping up")
+    if converging and sh_sl < 0 and sl_sl < 0:  # falling wedge → bullish
+        line = sh[-1]
+        status = "breakout" if close >= line else "forming"
+        return PatternMatch(
+            name="Falling Wedge", found=True, direction="bullish", status=status,
+            breakout_level=float(line), support=float(sl[-1]), resistance=float(line),
+            start=win.index[lo[0]], end=df.index[-1], note="converging, sloping down")
+    return _na(name)
+
+
+# --------------------------------------------------------------------------
 # Run them all
 # --------------------------------------------------------------------------
 
@@ -444,6 +560,8 @@ ADVANCED_DETECTORS = {
     "double_bottom": detect_double_bottom,
     "double_top": detect_double_top,
     "triangle": detect_triangle,
+    "head_shoulders": detect_head_shoulders,
+    "wedge": detect_wedge,
 }
 
 ADVANCED_PATTERNS = [
@@ -453,6 +571,8 @@ ADVANCED_PATTERNS = [
     ("double_bottom", "Double Bottom", 1),
     ("double_top", "Double Top", -1),
     ("triangle", "Triangle (asc/desc)", 0),
+    ("head_shoulders", "Head & Shoulders (+inverse)", 0),
+    ("wedge", "Wedge (rising/falling)", 0),
 ]
 
 
