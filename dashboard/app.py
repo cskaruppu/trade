@@ -203,6 +203,7 @@ if _page == "🏆 Pattern Picks":
     _PAT_CHOICES = {
         "Cup & Handle": "cup_and_handle",
         "Darvas Box": "darvas_box",
+        "VCP (Volatility Contraction)": "vcp",
         "Bull Flag": "flag",
         "Double Bottom": "double_bottom",
         "Ascending/Descending Triangle": "triangle",

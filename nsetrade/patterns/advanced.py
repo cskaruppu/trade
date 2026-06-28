@@ -550,6 +550,71 @@ def detect_wedge(
 
 
 # --------------------------------------------------------------------------
+# VCP — Volatility Contraction Pattern (Minervini)
+# --------------------------------------------------------------------------
+
+
+def detect_vcp(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 160,
+    min_contractions: int = 2,
+    max_first_depth: float = 0.45,
+    max_last_depth: float = 0.15,
+) -> PatternMatch:
+    """Volatility Contraction Pattern: a series of progressively *tighter*
+    pullbacks as the stock coils near its highs, then a breakout above the
+    final pivot.
+
+    Heuristic: walk the swing pivots and measure each high→low pullback depth.
+    The recent pullbacks must contract (each shallower than the last), the first
+    not too deep and the last tight; the pivot is the most recent swing high and
+    a breakout fires when price reaches it.
+    """
+    name = "VCP"
+    win = df.tail(lookback)
+    if len(win) < 40:
+        return _na(name, "not enough bars")
+    highs, lows = _swings(win, left=3, right=3)
+    if len(highs) < 2 or len(lows) < 2:
+        return _na(name)
+    hv, lv = win["high"].values, win["low"].values
+
+    pivots = sorted([(i, "H") for i in highs] + [(i, "L") for i in lows])
+    contractions = []           # (high_idx, low_idx, depth)
+    last_high = None
+    for idx, kind in pivots:
+        if kind == "H":
+            last_high = (idx, hv[idx])
+        elif last_high is not None:
+            hi = last_high[1]
+            low = lv[idx]
+            if hi > 0 and low < hi:
+                contractions.append((last_high[0], idx, (hi - low) / hi))
+            last_high = None
+    if len(contractions) < min_contractions:
+        return _na(name, "too few contractions")
+
+    take = 3 if len(contractions) >= 3 else min_contractions
+    recent = contractions[-take:]
+    depths = [c[2] for c in recent]
+    contracting = all(depths[k + 1] < depths[k] for k in range(len(depths) - 1))
+    if not (contracting and depths[0] <= max_first_depth
+            and depths[-1] <= max_last_depth):
+        return _na(name)
+
+    pivot = float(hv[highs[-1]])
+    close = float(win["close"].iloc[-1])
+    status = "breakout" if close >= pivot * 0.99 else "forming"
+    return PatternMatch(
+        name=name, found=True, direction="bullish", status=status,
+        breakout_level=pivot, support=float(lv[recent[-1][1]]), resistance=pivot,
+        start=win.index[recent[0][0]], end=df.index[-1],
+        note=f"{len(recent)} contractions "
+             f"{', '.join(f'{d:.0%}' for d in depths)}")
+
+
+# --------------------------------------------------------------------------
 # Run them all
 # --------------------------------------------------------------------------
 
@@ -562,6 +627,7 @@ ADVANCED_DETECTORS = {
     "triangle": detect_triangle,
     "head_shoulders": detect_head_shoulders,
     "wedge": detect_wedge,
+    "vcp": detect_vcp,
 }
 
 ADVANCED_PATTERNS = [
@@ -573,6 +639,7 @@ ADVANCED_PATTERNS = [
     ("triangle", "Triangle (asc/desc)", 0),
     ("head_shoulders", "Head & Shoulders (+inverse)", 0),
     ("wedge", "Wedge (rising/falling)", 0),
+    ("vcp", "VCP (Volatility Contraction)", 1),
 ]
 
 

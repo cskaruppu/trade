@@ -7,6 +7,7 @@ from nsetrade.edge import pattern_edge_validated, ValidatedEdge
 from nsetrade.patterns.advanced import (
     ADVANCED_DETECTORS,
     detect_head_shoulders,
+    detect_vcp,
     detect_wedge,
 )
 
@@ -24,6 +25,37 @@ def frame(close, start="2019-01-01"):
 def test_detectors_registered():
     assert "head_shoulders" in ADVANCED_DETECTORS
     assert "wedge" in ADVANCED_DETECTORS
+    assert "vcp" in ADVANCED_DETECTORS
+
+
+def test_vcp_detected_on_contracting_base():
+    # progressively tighter pullbacks: 25% -> 12% -> 5%, then breakout
+    seg = []
+    seg += list(np.linspace(50, 100, 25))    # rally
+    seg += list(np.linspace(100, 75, 12))    # pullback 1 (~25%)
+    seg += list(np.linspace(75, 105, 16))    # rally to new high
+    seg += list(np.linspace(105, 92, 10))    # pullback 2 (~12%)
+    seg += list(np.linspace(92, 108, 12))    # rally
+    seg += list(np.linspace(108, 102, 8))    # pullback 3 (~5%)
+    seg += list(np.linspace(102, 116, 10))   # breakout above pivot
+    m = detect_vcp(frame(seg))
+    assert m.found
+    assert m.direction == "bullish"
+    assert m.breakout_level is not None
+    assert "contractions" in m.note
+
+
+def test_vcp_rejects_widening_pullbacks():
+    # pullbacks getting DEEPER (not a VCP)
+    seg = []
+    seg += list(np.linspace(50, 100, 25))
+    seg += list(np.linspace(100, 95, 8))     # 5%
+    seg += list(np.linspace(95, 108, 14))
+    seg += list(np.linspace(108, 90, 10))    # ~17% (widening)
+    seg += list(np.linspace(90, 112, 14))
+    seg += list(np.linspace(112, 80, 12))    # ~29% (widening more)
+    m = detect_vcp(frame(seg))
+    assert not m.found
 
 
 def test_head_shoulders_detected_on_constructed_series():
