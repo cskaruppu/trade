@@ -106,6 +106,34 @@ def _pattern_confidence(row: dict):
 
 
 @st.cache_data(show_spinner=False)
+def _best_pattern_badge(symbol, days, timeframe):
+    """Find the strongest detected pattern for a stock + its validated edge,
+    and return (badge_text, colour) for annotating its chart. Cached per stock."""
+    try:
+        from nsetrade.ai import _pattern_key
+        from nsetrade.edge import pattern_edge_validated
+        from nsetrade.patterns.advanced import detect_advanced, volume_confirms
+        df = _history(provider, symbol, days, timeframe)
+        matches = detect_advanced(df)
+        if not matches:
+            return None
+        m = next((x for x in matches if x.status == "breakout"), matches[0])
+        row = {"pattern": m.name, "edge": "-", "robust": "-",
+               "vol": "✓" if (m.status == "breakout" and volume_confirms(df)) else "-"}
+        key = _pattern_key(m.name)
+        if key:
+            ve = pattern_edge_validated(df, key)
+            if ve.full.occurrences:
+                row["edge"] = f"{ve.full.win_rate:.0%} / {ve.full.occurrences}"
+                row["robust"] = "✓" if ve.robust else "✗"
+        conf, color = _pattern_confidence(row)
+        return (f"{row['pattern']}  ·  edge {row['edge']}  ·  robust {row['robust']}"
+                f"  ·  vol {row['vol']}  ·  {conf}"), color
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@st.cache_data(show_spinner=False)
 def _daily(provider, symbol, days):
     prov = get_provider(provider, provider_config(cfg, provider))
     return prov.history(symbol, period_days=days)
@@ -364,9 +392,21 @@ if _page == "🏆 Pattern Picks":
         if not hits_rows:
             st.warning("No matching patterns found on this universe.")
         else:
-            st.dataframe(hits_rows, use_container_width=True, hide_index=True)
-            st.caption("edge = win-rate / past occurrences · robust ✓ = the edge "
-                       "held on data it never saw. Probability, not a guarantee.")
+            import pandas as _pd
+            _df = _pd.DataFrame(hits_rows)
+            _confs = [_pattern_confidence(r) for r in hits_rows]
+            _df.insert(len(_df.columns), "confidence", [c[0] for c in _confs])
+            _row_colors = [c[1] for c in _confs]
+
+            def _tint(row):
+                color = _row_colors[row.name]
+                return [f"background-color: {color}22"] * len(row)
+
+            st.dataframe(_df.style.apply(_tint, axis=1),
+                         use_container_width=True, hide_index=True)
+            st.caption("🟢 high · 🟡 moderate · 🔴 low/unproven — by out-of-sample "
+                       "robustness, win-rate, sample size & volume. "
+                       "edge = win-rate / occurrences. Probability, not a guarantee.")
 
             # ---- view a pick's chart with the pattern drawn on it ----
             st.divider()
@@ -671,6 +711,15 @@ if _page == "📊 Analyse":
                                         "industry-standard 23.6/38.2/50/61.8/78.6% levels")
             fig, notes = build_figure(f"{symbol} · {timeframe}", df, bars=220,
                                       show_fib=show_fib)
+            _badge = _best_pattern_badge(symbol, days, timeframe)
+            if _badge:
+                _btext, _bcolor = _badge
+                fig.add_annotation(
+                    xref="paper", yref="paper", x=0.005, y=1.07,
+                    xanchor="left", yanchor="top", showarrow=False, text=_btext,
+                    font=dict(size=12, color=_bcolor),
+                    bgcolor="rgba(17,21,28,0.92)", bordercolor=_bcolor,
+                    borderwidth=1, borderpad=6)
             st.plotly_chart(fig, use_container_width=True,
                             config={"scrollZoom": True, "displaylogo": False})
 
