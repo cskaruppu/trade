@@ -12,7 +12,7 @@ from typing import Optional
 DEFAULT_CONFIG = {
     "default_provider": "yfinance",
     "default_universe": "nifty50",
-    "providers": {"yfinance": {}, "kite": {}},
+    "providers": {"yfinance": {}, "bhavcopy": {}},
 }
 
 

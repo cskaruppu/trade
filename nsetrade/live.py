@@ -2,8 +2,8 @@
 
 Polls a watchlist on an interval, recomputes the signal for each symbol, and
 emits an *alert* whenever a symbol's verdict crosses into Buy/Sell territory or
-a fresh pattern fires on the latest bar. Works with any provider but is intended
-for your Zerodha Kite feed during market hours.
+a fresh pattern fires on the latest bar. Works with any provider (yfinance by
+default); note free data is end-of-day / delayed, not real-time tick.
 
 The scan logic (:func:`scan_once`, :func:`diff_alerts`) is pure and unit-tested;
 :func:`watch` is the thin polling loop around it.
@@ -57,7 +57,7 @@ def is_market_open(now: Optional[dt.datetime] = None) -> bool:
 def scan_once(
     symbols: list[str],
     *,
-    provider: str = "kite",
+    provider: str = "yfinance",
     provider_config: Optional[dict] = None,
     interval: str = "1d",
     period_days: int = 400,
@@ -99,7 +99,7 @@ def diff_alerts(
 def watch(
     symbols: list[str],
     *,
-    provider: str = "kite",
+    provider: str = "yfinance",
     provider_config: Optional[dict] = None,
     interval_seconds: int = 300,
     poll_interval: str = "1d",

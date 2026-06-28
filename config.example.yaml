@@ -1,7 +1,7 @@
 # Copy this file to config.yaml and fill in your details.
 # config.yaml is git-ignored so your credentials never get committed.
 
-# Which data provider to use by default: "yfinance" or "kite"
+# Which data provider to use by default: "yfinance" or "bhavcopy" (both free)
 default_provider: yfinance
 
 providers:
@@ -10,13 +10,11 @@ providers:
     # automatically (e.g. RELIANCE -> RELIANCE.NS).
     {}
 
-  kite:
-    # Zerodha Kite Connect. See https://kite.trade/docs/connect/v3/
-    # The access_token is generated daily via the Kite login flow.
-    # You can also set these via environment variables:
-    #   KITE_API_KEY, KITE_ACCESS_TOKEN
-    api_key: "your_api_key_here"
-    access_token: "your_daily_access_token_here"
+  bhavcopy:
+    # Bulk end-of-day data for the whole NSE from a local store.
+    # Build it once with: nsetrade fetch-bhavcopy --days 400
+    # (no key, no rate limits). Optional: db path, adjust (split adjustment).
+    {}
 
 # Default screening universe: nifty50 | nifty100 | nifty500 | custom
 default_universe: nifty50

@@ -1,8 +1,8 @@
 """Resample daily OHLCV bars to weekly or monthly timeframes.
 
-Kite (and most broker APIs) only serve daily and intraday bars, so the uniform
-way to get weekly/monthly candles across every provider is to fetch daily data
-and aggregate it here. Weekly bars are anchored to Friday (the NSE week close);
+Most data sources serve daily (and intraday) bars only, so the uniform way to
+get weekly/monthly candles across every provider is to fetch daily data and
+aggregate it here. Weekly bars are anchored to Friday (the NSE week close);
 monthly bars to month-end.
 """
 

@@ -13,9 +13,9 @@ def get_provider(name: str, config: Optional[dict] = None) -> DataProvider:
     Parameters
     ----------
     name:
-        ``"yfinance"`` or ``"kite"``.
+        ``"yfinance"`` or ``"bhavcopy"``.
     config:
-        The provider-specific options block (e.g. ``config["providers"]["kite"]``).
+        The provider-specific options block (e.g. ``config["providers"]["bhavcopy"]``).
     """
     name = (name or "yfinance").lower()
     opts = dict(config or {})
@@ -25,12 +25,6 @@ def get_provider(name: str, config: Optional[dict] = None) -> DataProvider:
 
         return YFinanceProvider(**{k: v for k, v in opts.items() if k == "suffix"})
 
-    if name in ("kite", "zerodha"):
-        from .kite_provider import KiteProvider
-
-        allowed = {"api_key", "access_token", "exchange"}
-        return KiteProvider(**{k: v for k, v in opts.items() if k in allowed})
-
     if name in ("bhavcopy", "nse_bhavcopy"):
         from ..bhavcopy import BhavcopyProvider
 
@@ -38,5 +32,5 @@ def get_provider(name: str, config: Optional[dict] = None) -> DataProvider:
         return BhavcopyProvider(**{k: v for k, v in opts.items() if k in allowed})
 
     raise ValueError(
-        f"unknown provider {name!r}. Available: 'yfinance', 'kite', 'bhavcopy'."
+        f"unknown provider {name!r}. Available: 'yfinance', 'bhavcopy'."
     )

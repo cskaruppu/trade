@@ -2,7 +2,7 @@
 REM ===========================================================================
 REM  nsetrade - one-time setup for a private local install on Windows.
 REM  Double-click this file, or run it from a terminal. It creates a virtual
-REM  environment and installs everything (dashboard, charts, Kite, yfinance).
+REM  environment and installs everything (dashboard, charts, yfinance, ai).
 REM ===========================================================================
 setlocal
 cd /d "%~dp0\.."
@@ -22,7 +22,7 @@ echo [nsetrade] Upgrading pip...
 python -m pip install --upgrade pip >nul
 
 echo [nsetrade] Installing nsetrade and all extras (this can take a minute)...
-pip install -e ".[yfinance,charts,dashboard,kite,ai]"
+pip install -e ".[yfinance,charts,dashboard,ai]"
 if errorlevel 1 (
     echo ERROR: installation failed. See the messages above.
     pause
@@ -32,7 +32,7 @@ if errorlevel 1 (
 if not exist config.yaml (
     copy config.example.yaml config.yaml >nul
     echo [nsetrade] Created config.yaml from the template.
-    echo            Edit it to add your Zerodha Kite api_key / access_token.
+    echo            Optional: add your Anthropic API key for the AI features.
 )
 
 echo.

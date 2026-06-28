@@ -40,7 +40,7 @@ if not exist .venv\Scripts\activate.bat (
 
 call .venv\Scripts\activate.bat
 echo [nsetrade] Refreshing dependencies (fast if nothing changed)...
-pip install -e ".[yfinance,charts,dashboard,kite,ai]" >nul
+pip install -e ".[yfinance,charts,dashboard,ai]" >nul
 
 echo.
 echo [nsetrade] Up to date with GitHub. Verifying the package imports...

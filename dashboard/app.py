@@ -110,7 +110,7 @@ def _verdict_color(v: str) -> str:
 # ---- sidebar ---------------------------------------------------------------
 st.sidebar.title("⚡ EdgeForge")
 st.sidebar.caption("Forge an edge from evidence — runs only on this machine.")
-_PROVIDERS = ["yfinance", "kite", "bhavcopy"]
+_PROVIDERS = ["yfinance", "bhavcopy"]
 provider = st.sidebar.selectbox(
     "Data provider", _PROVIDERS,
     index=_PROVIDERS.index(cfg.get("default_provider", "yfinance"))
@@ -118,7 +118,8 @@ provider = st.sidebar.selectbox(
 )
 timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
                              horizontal=True)
-st.sidebar.caption("Kite credentials come from config.yaml. yfinance needs none.")
+st.sidebar.caption("yfinance is free (no key). bhavcopy reads your local "
+                   "Bhavcopy store (run `nsetrade fetch-bhavcopy`).")
 
 with st.sidebar.expander("➕ Full NSE coverage (~2000 stocks)"):
     st.caption("Index lists cover up to Nifty 500. Download the full NSE equity "

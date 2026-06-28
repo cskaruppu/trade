@@ -19,7 +19,7 @@ risk real money.
 
 | Area | What you get |
 |------|--------------|
-| **Data layer** | Pluggable providers. Ships with a free **yfinance** adapter (works out of the box) and a **Zerodha Kite** adapter for your paid API. |
+| **Data layer** | Pluggable providers, **all free**: a **yfinance** adapter (works out of the box) and a **Bhavcopy** adapter that serves the whole NSE from a local end-of-day store. |
 | **Technical indicators** | RSI, MACD, SMA/EMA, Bollinger Bands, ATR, ADX, Stochastic, OBV, VWAP. |
 | **Candlestick patterns** | Doji, Hammer, Shooting Star, Bullish/Bearish Engulfing, Morning/Evening Star, Piercing Line, Dark Cloud Cover. |
 | **Chart patterns / signals** | Golden & Death cross, support/resistance, N‑day breakouts, 52‑week high/low proximity, RSI reversals, MACD crossovers. |
@@ -38,7 +38,7 @@ risk real money.
 | **Screener** | Scan a universe (Nifty 50 / Nifty 500 / custom) and rank stocks by a combined bullish/bearish score with human‑readable reasons. |
 | **Backtester** | Risk‑managed event‑driven backtest (ATR stop‑loss, take‑profit, position sizing) with win‑rate, CAGR, Sharpe, max drawdown, profit factor, expectancy and a full trade log. Plus **portfolio‑level** testing across a basket. |
 | **Charts** | One‑command annotated PNG charts (price + MAs + Bollinger, volume, RSI, MACD) with detected patterns marked — glanceable on a phone. |
-| **Live scanner** | Poll a watchlist on your Kite feed during market hours and alert when a signal/pattern fires. |
+| **Live scanner** | Poll a watchlist on an interval and alert when a signal/pattern fires (free data is end-of-day/delayed). |
 | **Dashboard** | A Streamlit web app over the whole toolkit: analyse, screen and backtest interactively. |
 
 ---
@@ -51,7 +51,7 @@ cd trade
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .                 # core (pandas, numpy, pyyaml)
 pip install -e ".[yfinance]"     # add the free yfinance data provider
-pip install -e ".[kite]"         # add the Zerodha Kite provider
+pip install -e ".[dashboard]"    # the dashboard (also pulls charts)
 pip install -e ".[charts]"       # add PNG chart export (matplotlib)
 pip install -e ".[dashboard]"    # add the Streamlit web dashboard
 ```
@@ -74,7 +74,7 @@ nsetrade backtest --universe nifty50 --strategy breakout --years 3
 # Save an annotated PNG chart with patterns marked
 nsetrade chart RELIANCE --out reliance.png
 
-# Live-watch a basket on your Kite feed (alerts when signals fire)
+# Poll a basket on an interval and alert when signals fire
 nsetrade watch --symbols RELIANCE,INFY,TCS --interval 300
 
 # Launch the interactive web dashboard
@@ -155,22 +155,25 @@ level** and whether it is *forming* or already *breaking out*.
 > the chart, not an automatic trade. The `chart` command (and dashboard) draw
 > the levels so you can eyeball them.
 
-## Using your Zerodha Kite API
+## Full-NSE data via Bhavcopy (free, no rate limits)
 
-1. `pip install -e ".[kite]"`
-2. Copy `config.example.yaml` to `config.yaml` and fill in your Kite
-   `api_key` / `access_token` (see [Kite Connect docs](https://kite.trade/docs/connect/v3/)).
-3. Run with `--provider kite`, e.g. `nsetrade analyse INFY --provider kite`.
+For scanning the whole NSE reliably (yfinance rate-limits bulk requests), build
+a local end-of-day store from NSE's official Bhavcopy — one file per trading
+day instead of thousands of per-symbol calls:
 
-The Kite access token expires daily; regenerate it through the Kite login flow
-and update `config.yaml` (or set `KITE_ACCESS_TOKEN`).
+1. `nsetrade fetch-bhavcopy --days 400` — downloads + stores history locally.
+2. Use it with `--provider bhavcopy` (goes before the command), e.g.
+   `nsetrade --provider bhavcopy opportunities --universe nse_all --top 20`,
+   or pick **bhavcopy** in the dashboard's Data provider dropdown.
+
+End-of-day only, and prices are raw (heuristic split adjustment is applied).
 
 ---
 
 ## Run it privately on your Windows laptop (no cloud, nothing exposed)
 
 This toolkit is designed to run entirely on your own machine. Nothing is sent
-anywhere except the data requests to your chosen provider (Yahoo or Kite). To
+anywhere except the data requests to your chosen provider (Yahoo or NSE). To
 keep it private:
 
 **One-time setup** — double-click `scripts\setup.bat` (or run it in a terminal).
@@ -210,9 +213,10 @@ and it only runs if you provide an Anthropic API key (`ai.api_key` in
 - **Localhost-only binding.** `.streamlit\config.toml` binds the dashboard to
   `127.0.0.1`, so it is reachable *only from this laptop* — not from your
   Wi-Fi, your office LAN, or the internet. No one else can open it.
-- **Your API keys never leave the machine.** `config.yaml` (and `.env`,
-  `*.token`) are in `.gitignore`, so your Kite `api_key`/`access_token` are
-  **never committed or pushed** to GitHub. Keep the GitHub repo private too.
+- **Your secrets never leave the machine.** `config.yaml` (and `.env`,
+  `*.token`) are in `.gitignore`, so anything you put there (e.g. your optional
+  Anthropic API key) is **never committed or pushed** to GitHub. Keep the repo
+  private too.
 - **No telemetry.** Streamlit usage-stat reporting is turned off.
 - **No external services.** There is no hosted backend, no account, no data
   sharing. Outbound traffic is only the price-data API calls you trigger.
@@ -222,8 +226,8 @@ and it only runs if you provide an Anthropic API key (`ai.api_key` in
 > authentication first, and only do it on a trusted network. The default
 > (localhost) needs no password precisely because nothing else can connect.
 
-> ☝️ Treat your `access_token` like a password. If you think it leaked,
-> regenerate it from the Kite developer console immediately.
+> ☝️ Treat your Anthropic API key like a password — keep it in `config.yaml`
+> (git-ignored), and rotate it in the Anthropic console if it ever leaks.
 
 ---
 
@@ -265,7 +269,7 @@ as a *shortlist to investigate*, never as automatic buy/sell orders.
 
 ```
 nsetrade/
-  data/        # pluggable data providers (yfinance, kite)
+  data/        # pluggable data providers (yfinance, bhavcopy)
   indicators/  # pure-pandas technical indicators
   patterns/    # candlestick + chart pattern detectors
   signals/     # combine indicators+patterns into a scored signal

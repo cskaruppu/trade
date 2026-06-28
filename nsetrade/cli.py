@@ -5,7 +5,7 @@ Subcommands:
     screen     Scan a universe and rank stocks by signal score.
     backtest   Risk-managed backtest of a strategy (single stock or portfolio).
     chart      Render an annotated PNG chart with patterns marked.
-    watch      Live watchlist scanner that alerts when signals fire (Kite).
+    watch      Polling watchlist scanner that alerts when signals fire.
     patterns   List the patterns/strategies the toolkit knows about.
 """
 
@@ -805,7 +805,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--version", action="version", version=f"nsetrade {__version__}")
     p.add_argument("--config", help="path to config.yaml (optional)")
-    p.add_argument("--provider", help="data provider: yfinance | kite | bhavcopy "
+    p.add_argument("--provider", help="data provider: yfinance | bhavcopy "
                                        "(overrides config; goes before the command)")
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -1058,7 +1058,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="fraction of capital risked per trade")
     th.set_defaults(func=cmd_thesis)
 
-    w = sub.add_parser("watch", help="live watchlist scanner (needs Kite)")
+    w = sub.add_parser("watch", help="polling watchlist scanner (alerts on signals)")
     w.add_argument("--universe", help="nifty50 | nifty100")
     w.add_argument("--symbols", help="comma-separated watchlist")
     w.add_argument("--watchlist", action="store_true",
