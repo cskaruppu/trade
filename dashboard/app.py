@@ -392,27 +392,65 @@ if _page == "🏆 Pattern Picks":
         if not hits_rows:
             st.warning("No matching patterns found on this universe.")
         else:
-            import pandas as _pd
-            _df = _pd.DataFrame(hits_rows)
-            _confs = [_pattern_confidence(r) for r in hits_rows]
-            _df.insert(len(_df.columns), "confidence", [c[0] for c in _confs])
-            _row_colors = [c[1] for c in _confs]
+            from nsetrade.ai import _pattern_key
 
-            def _tint(row):
-                color = _row_colors[row.name]
-                return [f"background-color: {color}22"] * len(row)
+            # only show the patterns currently selected in the multiselect above
+            _sel_keys = {_PAT_CHOICES[c] for c in chosen}
+            rows = [r for r in hits_rows
+                    if _pattern_key(r.get("pattern", "")) in _sel_keys]
 
-            st.dataframe(_df.style.apply(_tint, axis=1),
-                         use_container_width=True, hide_index=True)
-            st.caption("🟢 high · 🟡 moderate · 🔴 low/unproven — by out-of-sample "
-                       "robustness, win-rate, sample size & volume. "
-                       "edge = win-rate / occurrences. Probability, not a guarantee.")
+            # ---- search + filter the results ----
+            fc1, fc2, fc3 = st.columns([2, 2, 2])
+            _q = fc1.text_input("🔍 Search symbol", key="pp_q").strip().upper()
+            _conf_pick = fc2.multiselect("Confidence",
+                                         ["High", "Moderate", "Low/Unproven"],
+                                         default=[], key="pp_conf")
+            _status_pick = fc3.multiselect("Status", ["breakout", "forming"],
+                                           default=[], key="pp_status")
+
+            def _tier(r):
+                lab = _pattern_confidence(r)[0]
+                return ("High" if lab.startswith("High")
+                        else "Moderate" if lab.startswith("Moderate")
+                        else "Low/Unproven")
+
+            if _q:
+                rows = [r for r in rows if _q in r.get("symbol", "")]
+            if _conf_pick:
+                rows = [r for r in rows if _tier(r) in _conf_pick]
+            if _status_pick:
+                rows = [r for r in rows if r.get("status") in _status_pick]
+
+            st.caption(f"Showing **{len(rows)}** of {len(hits_rows)} rows · "
+                       f"patterns: {', '.join(chosen) or 'none selected'}")
+
+            if not rows:
+                st.info("No rows match. Loosen the filters — or if you selected a "
+                        "pattern that isn't in the cached scan, click "
+                        "*Scan for patterns* to run it live.")
+            else:
+                import pandas as _pd
+                _df = _pd.DataFrame(rows)
+                _confs = [_pattern_confidence(r) for r in rows]
+                _df.insert(len(_df.columns), "confidence", [c[0] for c in _confs])
+                _row_colors = [c[1] for c in _confs]
+
+                def _tint(row):
+                    return [f"background-color: {_row_colors[row.name]}22"] * len(row)
+
+                st.dataframe(_df.style.apply(_tint, axis=1),
+                             use_container_width=True, hide_index=True)
+                st.caption("🟢 high · 🟡 moderate · 🔴 low/unproven — by out-of-sample "
+                           "robustness, win-rate, sample size & volume. "
+                           "edge = win-rate / occurrences. Probability, not a guarantee.")
 
             # ---- view a pick's chart with the pattern drawn on it ----
-            st.divider()
-            st.markdown("### 📈 View the chart with the pattern marked")
-            psel = st.selectbox("Pick a stock from the results above",
-                                st.session_state["pp_syms"], key="pp_sel")
+            psel = None
+            if rows:
+                st.divider()
+                st.markdown("### 📈 View the chart with the pattern marked")
+                psel = st.selectbox("Pick a stock from the filtered results",
+                                    [r["symbol"] for r in rows], key="pp_sel")
             pdaily = None
             if psel:
                 try:
@@ -420,7 +458,7 @@ if _page == "🏆 Pattern Picks":
                     pfig, pnotes = build_figure(f"{psel} · daily", pdaily, bars=220,
                                                 show_patterns=True, show_fib=False)
                     # confidence badge drawn on the chart from the result row
-                    prows = [r for r in (hits_rows or []) if r.get("symbol") == psel]
+                    prows = [r for r in rows if r.get("symbol") == psel]
                     if prows:
                         r0 = prows[0]
                         conf, color = _pattern_confidence(r0)
