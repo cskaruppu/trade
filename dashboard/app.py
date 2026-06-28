@@ -428,8 +428,10 @@ with tab_w:
                 except Exception:  # noqa: BLE001
                     continue
         prog.empty()
-        st.dataframe(rows, use_container_width=True, hide_index=True) if rows \
-            else st.warning("No patterns detected.")
+        if rows:
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No patterns detected.")
 
 
 # ---- Confluence ------------------------------------------------------------
