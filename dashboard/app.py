@@ -38,6 +38,11 @@ except ImportError:
     def list_universes():
         return list(UNIVERSES)
 
+try:  # added later — guarded so a stale universe.py degrades, not crashes
+    from nsetrade.universe import refresh_nse_equity_list
+except ImportError:
+    refresh_nse_equity_list = None
+
 st.set_page_config(page_title="EdgeForge", page_icon="⚡", layout="wide")
 cfg = load_config()
 
@@ -117,8 +122,10 @@ with st.sidebar.expander("➕ Full NSE coverage (~2000 stocks)"):
     st.caption("Index lists cover up to Nifty 500. Download the full NSE equity "
                "list once to scan **everything** as the 'nse_all' universe — it "
                "then appears in every dropdown.")
-    if st.button("Download / refresh full NSE list"):
-        from nsetrade.universe import refresh_nse_equity_list
+    if refresh_nse_equity_list is None:
+        st.warning("Your local nsetrade is out of date. Update it with "
+                   "`scripts\\update.bat` (or `git pull`) to enable this.")
+    elif st.button("Download / refresh full NSE list"):
         with st.spinner("Downloading the NSE equity list…"):
             try:
                 syms = refresh_nse_equity_list()
