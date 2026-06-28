@@ -531,6 +531,39 @@ def cmd_opportunities(args, cfg):
               "Educational only — not investment advice.]")
 
 
+def cmd_ask(args, cfg):
+    """Natural-language screener: describe what you want, Claude builds the filter."""
+    from .ai import ThesisConfig
+    from .nlscreen import NLScreener
+
+    tcfg = ThesisConfig.from_config(cfg)
+    if not tcfg.enabled:
+        raise SystemExit(
+            "The natural-language screener needs an Anthropic API key "
+            "(ai.api_key or ANTHROPIC_API_KEY).")
+
+    provider, pconf = _resolve_provider(args, cfg)
+    symbols = _resolve_symbols(args, cfg)
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    print(f"Interpreting your request with Claude ({tcfg.model})…", file=sys.stderr)
+    spec, matches = NLScreener(tcfg).screen(
+        args.query, symbols, provider=provider, provider_config=pconf,
+        top=args.top, on_progress=progress)
+    print("", file=sys.stderr)
+
+    print(f"\nClaude read your request as: {spec.get('explanation', '')}\n")
+    if not matches:
+        print("No stocks matched that filter.")
+        return
+    import pandas as pd
+    _print_table(pd.DataFrame([o.as_row() for o in matches]))
+    print("\nLLM only built the filter; matching is deterministic. "
+          "Educational only — not investment advice.")
+
+
 def cmd_desk(args, cfg):
     """Grade candidates with the multi-agent AI analyst desk."""
     from .ai import ThesisConfig, assemble_context
@@ -848,6 +881,17 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--timeframe", choices=tf_choices, default="daily",
                     help="candle timeframe")
     pl.set_defaults(func=cmd_plan)
+
+    # ---- ask (natural-language screener) ----
+    ak = sub.add_parser("ask",
+                        help="natural-language screener: describe what you want")
+    ak.add_argument("query", help="e.g. 'bullish weekly cup&handle with 2:1 RR'")
+    ak.add_argument("--universe", help="nifty50 | nifty100 | nifty500 | nse_all")
+    ak.add_argument("--symbols", help="comma-separated custom symbols")
+    ak.add_argument("--watchlist", action="store_true",
+                    help="search your saved watchlist")
+    ak.add_argument("--top", type=int, default=25, help="max matches to show")
+    ak.set_defaults(func=cmd_ask)
 
     # ---- desk (AI analyst panel grading) ----
     dk = sub.add_parser("desk",

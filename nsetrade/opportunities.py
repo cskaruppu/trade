@@ -41,6 +41,7 @@ class Opportunity:
     pattern_win_rate: Optional[float] = None
     pattern_occurrences: Optional[int] = None
     rr: Optional[float] = None
+    rsi: Optional[float] = None
     reasons: str = ""
 
     def as_row(self) -> dict:
@@ -54,6 +55,7 @@ class Opportunity:
             "edge": (f"{self.pattern_win_rate:.0%}/{self.pattern_occurrences}"
                      if self.pattern_win_rate is not None else "-"),
             "rr": f"{self.rr:.1f}" if self.rr is not None else "-",
+            "rsi": round(self.rsi, 1) if self.rsi is not None else None,
             "verdict": self.signal_verdict,
         }
 
@@ -138,11 +140,13 @@ def score_opportunity(
         pass
 
     score = base + EDGE_WEIGHT * edge_bonus + RR_WEIGHT * rr_bonus
+    rsi = sig.indicators.get("rsi_14")
     return Opportunity(
         symbol=symbol, score=score, side=side, close=sig.close,
         conviction=conf.conviction, aligned=conf.aligned,
         signal_verdict=sig.verdict, pattern=pattern,
         pattern_win_rate=win_rate, pattern_occurrences=occurrences, rr=rr,
+        rsi=float(rsi) if rsi is not None and rsi == rsi else None,
         reasons="; ".join(sig.reasons),
     )
 

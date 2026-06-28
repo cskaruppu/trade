@@ -144,10 +144,49 @@ _k2.metric("Data provider", provider)
 _k3.metric("Timeframe", timeframe)
 _k4.metric("Last cached scan", _last_scan_label())
 
-tab_o, tab_a, tab_w, tab_c, tab_e, tab_s, tab_b = st.tabs(
-    ["🚀 Opportunities", "📊 Analyse", "⭐ Watchlist", "🎯 Confluence",
-     "🧪 Pattern Edge", "🔎 Screener", "📈 Backtest"]
+tab_o, tab_q, tab_a, tab_c, tab_e, tab_s, tab_w, tab_b = st.tabs(
+    ["🚀 Opportunities", "💬 Ask AI", "📊 Analyse", "🎯 Confluence",
+     "🧪 Pattern Edge", "🔎 Screener", "⭐ Watchlist", "📈 Backtest"]
 )
+
+
+# ---- Ask AI (natural-language screener) ------------------------------------
+with tab_q:
+    st.subheader("Ask in plain English")
+    st.caption("Describe the setup you want — Claude builds the filter, then the "
+               "engine ranks and matches it. The LLM only writes the filter; the "
+               "matching is deterministic and auditable.")
+    _tcfg_ask = ThesisConfig.from_config(cfg)
+    examples = ("bullish weekly setups near a cup & handle with at least 2:1 "
+                "reward and a 60%+ historical edge")
+    q = st.text_area("Your request", value="", placeholder=examples, height=80)
+    qc1, qc2 = st.columns([2, 1])
+    q_uni = qc1.selectbox("Search universe", list_universes(), index=0, key="ask_uni")
+    q_top = qc2.slider("Max matches", 5, 40, 20, step=5, key="ask_top")
+    if not _tcfg_ask.enabled:
+        st.info("Add an Anthropic API key (ai.api_key or ANTHROPIC_API_KEY) to "
+                "use the natural-language screener.")
+    elif st.button("🔎 Find matches", type="primary", disabled=not q.strip()):
+        from nsetrade.nlscreen import NLScreener
+        syms = get_universe(q_uni)
+        prog = st.progress(0.0)
+        try:
+            spec, matches = NLScreener(_tcfg_ask).screen(
+                q.strip(), syms, provider=provider,
+                provider_config=provider_config(cfg, provider), top=q_top,
+                on_progress=lambda d, t, s: prog.progress(d / t, text=s))
+            prog.empty()
+            st.markdown(f"**Claude read your request as:** {spec.get('explanation','')}")
+            if matches:
+                st.dataframe([o.as_row() for o in matches],
+                             use_container_width=True, hide_index=True)
+                st.caption(f"{len(matches)} matches · LLM built the filter, "
+                           "matching is deterministic. Educational only.")
+            else:
+                st.warning("No stocks matched that filter — try loosening it.")
+        except Exception as exc:  # noqa: BLE001
+            prog.empty()
+            st.error(f"Ask AI failed: {exc}")
 
 
 # ---- Top Opportunities -----------------------------------------------------
@@ -309,6 +348,21 @@ with tab_a:
                                       show_fib=show_fib)
             st.plotly_chart(fig, use_container_width=True,
                             config={"scrollZoom": True, "displaylogo": False})
+
+            _tcfg_v = ThesisConfig.from_config(cfg)
+            if _tcfg_v.enabled and st.button("👁 AI chart read (vision)",
+                                             key="an_vision",
+                                             help="Claude looks at the chart image "
+                                                  "and gives an analyst read"):
+                with st.spinner(f"Claude ({_tcfg_v.model}) is reading the chart…"):
+                    try:
+                        from nsetrade.charts import render_chart_bytes
+                        png = render_chart_bytes(f"{symbol} ({timeframe})", df, bars=200)
+                        st.markdown(ThesisWriter(_tcfg_v).read_chart(png, symbol))
+                        st.caption("AI vision read of the chart image. "
+                                   "Educational only — not investment advice.")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"chart read failed: {exc}")
 
             cA, cB = st.columns(2)
             with cA:

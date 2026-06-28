@@ -130,3 +130,22 @@ def render_chart(
     fig.savefig(out_path, dpi=110)
     plt.close(fig)
     return out_path
+
+
+def render_chart_bytes(symbol: str, df, *, bars: int = 180,
+                       mark_last: int = 30) -> bytes:
+    """Render the chart to PNG and return the raw bytes (for AI vision input)."""
+    import os
+    import tempfile
+
+    fd, path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        render_chart(symbol, df, out_path=path, bars=bars, mark_last=mark_last)
+        with open(path, "rb") as fh:
+            return fh.read()
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass

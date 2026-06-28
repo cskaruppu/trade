@@ -171,6 +171,34 @@ class ThesisWriter:
         """Give a portfolio-level read over a ranked opportunity list."""
         return self._send(_OPP_SYSTEM, build_opportunities_prompt(opportunities, side))
 
+    def read_chart(self, image_png: bytes, symbol: str,
+                   context: Optional[dict] = None) -> str:
+        """Vision: let Claude *look at* the chart image and give an analyst read."""
+        import base64
+
+        b64 = base64.standard_b64encode(image_png).decode("ascii")
+        text = f"This is the price chart for {symbol} (NSE)."
+        if context:
+            text += "\n\nComputed context:\n" + build_prompt(symbol, context)
+        text += ("\n\nRead the chart like a technical analyst: trend, the chart "
+                 "patterns and support/resistance you can SEE, where price is in "
+                 "its range, and what would confirm or invalidate a move. Ground "
+                 "your read in the image. Be concise (under 180 words). "
+                 "Educational only — not investment advice.")
+        resp = self._client.messages.create(
+            model=self.config.model,
+            max_tokens=1500,
+            system=("You are a professional technical analyst for NSE equities "
+                    "reading a candlestick chart image."),
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": "image/png", "data": b64}},
+                {"type": "text", "text": text},
+            ]}],
+        )
+        parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
+        return "\n".join(parts).strip()
+
     def _send(self, system: str, prompt: str) -> str:
         resp = self._client.messages.create(
             model=self.config.model,
