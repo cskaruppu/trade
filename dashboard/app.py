@@ -83,6 +83,28 @@ def _grade_badge(grade: str) -> str:
     return f'<span class="nt-grade nt-{grade}">{grade}</span>'
 
 
+def _pattern_confidence(row: dict):
+    """Derive a confidence label + colour from a Pattern-Picks result row.
+
+    Based on the *evidence*: out-of-sample robustness, historical win-rate,
+    sample size, and volume confirmation. Not a prediction — a trust rating.
+    """
+    import re
+
+    robust = row.get("robust") == "✓"
+    vol = row.get("vol") == "✓"
+    m = re.match(r"(\d+)%\s*/\s*(\d+)", str(row.get("edge", "")))
+    win = int(m.group(1)) if m else 0
+    occ = int(m.group(2)) if m else 0
+    if robust and win >= 60 and occ >= 5:
+        return ("High confidence" + (" + volume" if vol else ""), "#26a69a")
+    if robust and occ >= 3:
+        return ("Moderate confidence", "#e3b341")
+    if occ and occ < 3:
+        return ("Low confidence — tiny sample", "#ef5350")
+    return ("Unproven edge", "#ef5350")
+
+
 @st.cache_data(show_spinner=False)
 def _daily(provider, symbol, days):
     prov = get_provider(provider, provider_config(cfg, provider))
@@ -357,8 +379,29 @@ if _page == "🏆 Pattern Picks":
                     pdaily = _daily(provider, psel, 500)
                     pfig, pnotes = build_figure(f"{psel} · daily", pdaily, bars=220,
                                                 show_patterns=True, show_fib=False)
+                    # confidence badge drawn on the chart from the result row
+                    prows = [r for r in (hits_rows or []) if r.get("symbol") == psel]
+                    if prows:
+                        r0 = prows[0]
+                        conf, color = _pattern_confidence(r0)
+                        badge = (f"{r0['pattern']}  ·  edge {r0['edge']}  ·  "
+                                 f"robust {r0['robust']}  ·  vol {r0['vol']}  ·  "
+                                 f"{conf}")
+                        pfig.add_annotation(
+                            xref="paper", yref="paper", x=0.005, y=1.07,
+                            xanchor="left", yanchor="top", showarrow=False,
+                            text=badge, font=dict(size=12, color=color),
+                            bgcolor="rgba(17,21,28,0.92)", bordercolor=color,
+                            borderwidth=1, borderpad=6)
                     st.plotly_chart(pfig, use_container_width=True,
                                     config={"scrollZoom": True, "displaylogo": False})
+                    if prows:
+                        st.markdown(
+                            f"<span class='nt-pill' style='border-color:{color}'>"
+                            f"{conf}</span> &nbsp; edge = historical win-rate / "
+                            f"occurrences · robust ✓ = held out-of-sample · "
+                            f"vol ✓ = breakout on above-average volume.",
+                            unsafe_allow_html=True)
                     if pnotes:
                         st.caption("Drawn on the chart — breakout level (dashed) and "
                                    "the pattern's range (shaded): "
