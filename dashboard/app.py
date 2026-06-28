@@ -312,26 +312,31 @@ if _page == "🏆 Pattern Picks":
         st.session_state["pp_hits"] = rows
         st.session_state["pp_syms"] = [h.symbol for h in hits]
         st.session_state["pp_when"] = None
+        st.session_state["pp_loaded_uni"] = pp_uni      # don't let auto-load override
         # cache so the page auto-loads these next time it's opened
         _pp_cache.save_run("patterns", pp_uni, rows, meta={"patterns": chosen})
         _pp_cache.prune(keep_per_key=5)
 
-    # auto-load the latest cached scan for this universe if we haven't scanned
-    # live this session
-    if "pp_hits" not in st.session_state:
+    # auto-load the cached scan for the SELECTED universe, and re-load whenever
+    # the universe changes (so picking nse_all instantly shows its cached picks)
+    if st.session_state.get("pp_loaded_uni") != pp_uni:
+        from datetime import datetime
         hit = _pp_cache.latest("patterns", pp_uni)
         if hit and hit["rows"]:
-            from datetime import datetime
             st.session_state["pp_hits"] = hit["rows"]
             st.session_state["pp_syms"] = [r["symbol"] for r in hit["rows"]]
             st.session_state["pp_when"] = datetime.fromtimestamp(
                 hit["created_at"]).strftime("%d %b %H:%M")
+        else:                                            # no cache for this universe
+            for _k in ("pp_hits", "pp_syms", "pp_when"):
+                st.session_state.pop(_k, None)
+        st.session_state["pp_loaded_uni"] = pp_uni
 
     hits_rows = st.session_state.get("pp_hits")
     _pp_when = st.session_state.get("pp_when")
     if _pp_when:
-        st.info(f"Auto-loaded your last scan from **{_pp_when}**. "
-                "Click *Scan for patterns* to refresh.")
+        st.info(f"Showing the cached scan for **{pp_uni}** from **{_pp_when}** "
+                f"({len(hits_rows)} picks). Click *Scan for patterns* to refresh.")
     if hits_rows is not None:
         if not hits_rows:
             st.warning("No matching patterns found on this universe.")
