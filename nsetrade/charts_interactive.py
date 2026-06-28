@@ -31,6 +31,7 @@ def build_figure(
     *,
     bars: int = 200,
     show_patterns: bool = True,
+    show_fib: bool = False,
 ):
     """Return a Plotly Figure for ``df`` (last ``bars`` rows)."""
     import plotly.graph_objects as go
@@ -93,6 +94,23 @@ def build_figure(
                         row=1, col=1)
                 except Exception:  # noqa: BLE001 - overlay is best-effort
                     pass
+
+    # ---- Fibonacci retracement overlay ----
+    if show_fib:
+        try:
+            from .fibonacci import fib_retracement
+            fr = fib_retracement(df)
+            if fr.found:
+                for lvl in fr.levels:
+                    fig.add_hline(
+                        y=lvl.price, line=dict(color="#c9a227", width=0.7,
+                                               dash="dot"), row=1, col=1,
+                        annotation_text=f"fib {lvl.label} {lvl.price:.1f}",
+                        annotation_position="right",
+                        annotation_font_color="#c9a227",
+                        annotation_font_size=9)
+        except Exception:  # noqa: BLE001 - overlay is best-effort
+            pass
 
     # ---- volume ----
     vol_colors = [_UP if c >= o else _DOWN

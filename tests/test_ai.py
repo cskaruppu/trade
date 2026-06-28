@@ -104,6 +104,17 @@ def test_assemble_context_shape():
     assert "TEST" in prompt
 
 
+def test_assemble_context_includes_fibonacci():
+    # strong rally then pullback → a clear swing for fib
+    seg = list(np.linspace(80, 200, 400)) + list(np.linspace(200, 170, 60))
+    df = ohlcv(seg)
+    ctx = ai.assemble_context("TEST", df, timeframe="daily")
+    assert "fibonacci" in ctx
+    assert "nearest_level" in ctx["fibonacci"]
+    prompt = ai.build_prompt("TEST", ctx)
+    assert "Fibonacci" in prompt
+
+
 def test_pattern_key_mapping():
     assert ai._pattern_key("Cup & Handle") == "cup_and_handle"
     assert ai._pattern_key("Darvas Box") == "darvas_box"

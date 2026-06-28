@@ -124,6 +124,14 @@ def build_prompt(symbol: str, context: dict) -> str:
             lines.append(
                 f"  - {p.get('name')} ({p.get('direction')}/{p.get('status')}), "
                 f"breakout {p.get('breakout_level')}{edge_txt}")
+    fib = context.get("fibonacci")
+    if fib:
+        ext = (f", extension targets {fib['ext_targets']}"
+               if fib.get("ext_targets") else "")
+        lines.append(
+            f"Fibonacci: swing {fib['swing']}; price near the "
+            f"{fib['nearest_level']} level @ {fib['nearest_price']} "
+            f"(acting as {fib['role']}){ext}")
     plan = context.get("trade_plan")
     if plan:
         lines.append(
@@ -248,6 +256,22 @@ def assemble_context(
             "aligned": c.aligned,
             "per_tf": {tf: s.verdict for tf, s in c.per_timeframe.items()},
         }
+
+    try:
+        from .fibonacci import fib_extension, fib_retracement
+        fr = fib_retracement(df)
+        if fr.found and fr.nearest:
+            fx = fib_extension(df)
+            ctx["fibonacci"] = {
+                "swing": f"{fr.swing_low:.1f}-{fr.swing_high:.1f} ({fr.direction})",
+                "nearest_level": fr.nearest.label,
+                "nearest_price": round(fr.nearest.price, 2),
+                "role": "support" if fr.direction == "up" else "resistance",
+                "ext_targets": ([round(l.price, 2) for l in fx.levels
+                                 if l.ratio >= 1.0] if fx.found else []),
+            }
+    except Exception:  # noqa: BLE001 - fib is best-effort enrichment
+        pass
     return ctx
 
 

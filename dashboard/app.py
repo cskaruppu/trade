@@ -301,7 +301,12 @@ with tab_a:
             m4.metric("ADX(14)", f"{_get(sig, 'adx'):.1f}")
             m5.metric("ATR(14)", f"{_get(sig, 'atr_14'):.2f}")
 
-            fig, notes = build_figure(f"{symbol} · {timeframe}", df, bars=220)
+            show_fib = st.checkbox("Overlay Fibonacci retracement", value=False,
+                                   key="an_fib",
+                                   help="auto-drawn on the dominant swing — "
+                                        "industry-standard 23.6/38.2/50/61.8/78.6% levels")
+            fig, notes = build_figure(f"{symbol} · {timeframe}", df, bars=220,
+                                      show_fib=show_fib)
             st.plotly_chart(fig, use_container_width=True,
                             config={"scrollZoom": True, "displaylogo": False})
 
@@ -316,6 +321,24 @@ with tab_a:
                         st.write(f"• {n}")
                 else:
                     st.caption("none detected on this timeframe")
+                # Fibonacci levels (retracement + extension targets)
+                from nsetrade.fibonacci import fib_extension, fib_retracement
+                fr = fib_retracement(df)
+                if fr.found:
+                    st.markdown("**Fibonacci retracement** "
+                                f"({fr.direction}-swing)")
+                    role = "support" if fr.direction == "up" else "resistance"
+                    frows = [{"level": l.label, "price": round(l.price, 2),
+                              "←": "nearest" if l is fr.nearest else ""}
+                             for l in fr.levels]
+                    st.dataframe(frows, use_container_width=True, hide_index=True)
+                    st.caption(f"These act as {role}. Nearest: "
+                               f"{fr.nearest.label} @ {fr.nearest.price:.1f}")
+                    ext = fib_extension(df)
+                    if ext.found:
+                        tg = ", ".join(f"{l.label} @ {l.price:.1f}"
+                                       for l in ext.levels if l.ratio >= 1.0)
+                        st.caption(f"Extension targets (upside): {tg}")
             with cB:
                 st.markdown("**Auto trade plan**")
                 direction = st.radio("Direction", ["long", "short"],

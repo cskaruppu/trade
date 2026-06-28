@@ -101,6 +101,15 @@ def cmd_analyse(args, cfg):
             print(f"    • {m.describe()}")
     else:
         print("    • none of the structural patterns detected")
+
+    from .fibonacci import fib_extension, fib_retracement
+    fr = fib_retracement(df)
+    if fr.found:
+        print("  Fibonacci:")
+        print(f"    • {fr.describe()}")
+        fx = fib_extension(df)
+        if fx.found:
+            print(f"    • {fx.describe()}")
     print()
 
 

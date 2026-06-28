@@ -24,6 +24,7 @@ risk real money.
 | **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
+| **Fibonacci levels** | Auto‑computed retracement (23.6/38.2/50/61.8/78.6%) on the dominant swing and trend‑based extension targets — the industry‑standard ratios, drawn for you and fed to the AI. |
 | **Opportunity ranker** | Scans a whole universe and ranks the most tradeable setups by **conviction + historical pattern edge + reward:risk** — surfaces the best evidence‑based candidates (probability, not a profit promise). |
 | **AI analyst desk** | Optional: a panel of specialised AI agents (trend, pattern‑edge verifier, risk, devil's‑advocate) scrutinise a candidate and assign an **A–F grade** — a skeptic argument can veto a top grade. Raises shortlist *precision*, the honest version of "accuracy". |
 | **AI trade thesis** | Optional: Claude reads the numeric analysis and writes a structured, grounded trade thesis (bias / setup / evidence / plan / risk), and can give a portfolio‑level read over the ranked opportunities. |
