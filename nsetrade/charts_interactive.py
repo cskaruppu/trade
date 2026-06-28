@@ -74,7 +74,8 @@ def build_figure(
     # ---- pattern overlays ----
     pattern_notes = []
     if show_patterns:
-        for m in detect_advanced(df):
+        _matches = detect_advanced(df)
+        for m in _matches:
             pattern_notes.append(m.describe())
             color = "#26a69a" if m.direction == "bullish" else "#ef5350"
             if m.breakout_level:
@@ -105,6 +106,39 @@ def build_figure(
                         name=m.name, showlegend=False, hoverinfo="skip"),
                         row=1, col=1)
                 except Exception:  # noqa: BLE001 - overlay is best-effort
+                    pass
+
+        # ---- measured-move target ("upside potential") ----
+        _bull = [m for m in _matches
+                 if m.direction == "bullish" and m.breakout_level and m.support
+                 and m.breakout_level > m.support]
+        if _bull:
+            # prefer a confirmed breakout, then the tallest base
+            m = max(_bull, key=lambda x: (x.status == "breakout",
+                                          x.breakout_level - x.support))
+            entry = float(m.breakout_level)
+            target = entry + (entry - float(m.support))   # classic measured move
+            last_close = float(view["close"].iloc[-1])
+            pct = (target / last_close - 1.0) if last_close else 0.0
+            if target > last_close:
+                try:
+                    fig.add_hrect(y0=entry, y1=target, line_width=0,
+                                  fillcolor="rgba(38,166,154,0.10)", row=1, col=1)
+                    fig.add_hline(
+                        y=target, line=dict(color="#26a69a", width=1.2, dash="dot"),
+                        row=1, col=1,
+                        annotation_text=f"🎯 Target {target:.1f}  (+{pct:.0%})",
+                        annotation_position="top left",
+                        annotation_font_color="#26a69a")
+                    x_arrow = view.index[int(len(view) * 0.93)]
+                    fig.add_annotation(
+                        x=x_arrow, y=target, ax=x_arrow, ay=entry,
+                        xref="x", yref="y", axref="x", ayref="y",
+                        showarrow=True, arrowhead=2, arrowsize=1.4, arrowwidth=2.5,
+                        arrowcolor="#26a69a", text="", row=1, col=1)
+                    pattern_notes.append(
+                        f"Upside potential: {entry:.1f} → {target:.1f} (+{pct:.0%})")
+                except Exception:  # noqa: BLE001 - target is best-effort
                     pass
 
     # ---- Fibonacci retracement overlay ----

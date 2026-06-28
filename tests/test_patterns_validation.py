@@ -77,6 +77,18 @@ def test_overlays_render_in_chart_without_error():
     assert len(fig.data) > 0
 
 
+def test_measured_move_target_drawn_on_breakout():
+    from nsetrade.charts_interactive import build_figure
+    # cup that breaks OUT above the rim → a measured-move target should appear
+    close = np.concatenate([
+        np.linspace(298, 300, 10),
+        300 - 90 * np.sin(np.linspace(0, np.pi / 2, 80)),
+        210 + 88 * np.sin(np.linspace(0, np.pi / 2, 75)),
+        np.linspace(298, 308, 15)])           # breakout above the rim
+    fig, notes = build_figure("TEST", frame(close), bars=200, show_patterns=True)
+    assert any("Upside potential" in n for n in notes)
+
+
 def test_volume_confirms_detects_surge():
     from nsetrade.patterns.advanced import volume_confirms
     base = frame(np.linspace(90, 110, 80))
