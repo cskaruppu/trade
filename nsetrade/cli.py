@@ -522,6 +522,55 @@ def cmd_opportunities(args, cfg):
               "Educational only — not investment advice.]")
 
 
+def cmd_desk(args, cfg):
+    """Grade candidates with the multi-agent AI analyst desk."""
+    from .ai import ThesisConfig, assemble_context
+    from .analyst_desk import AnalystDesk
+    from .data import get_provider
+    from .resample import resample_ohlcv
+
+    tcfg = ThesisConfig.from_config(cfg)
+    if not tcfg.enabled:
+        raise SystemExit(
+            "The analyst desk needs an Anthropic API key (ai.api_key or "
+            "ANTHROPIC_API_KEY). It makes several Claude calls per stock — "
+            "run it on a few top candidates, not the whole universe.")
+
+    provider, pconf = _resolve_provider(args, cfg)
+    prov = get_provider(provider, pconf)
+
+    if args.symbols:
+        symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    else:
+        # grade the top-N ranked opportunities from a fast local scan first
+        from .opportunities import rank_opportunities
+        universe = _resolve_symbols(args, cfg)
+        print(f"Ranking {len(universe)} stocks to pick the top {args.top}…",
+              file=sys.stderr)
+        ranked = rank_opportunities(universe, provider=provider,
+                                    provider_config=pconf, side=args.side,
+                                    top=args.top)
+        symbols = [o.symbol for o in ranked.opportunities]
+        if not symbols:
+            raise SystemExit("No candidates to grade.")
+
+    desk = AnalystDesk(tcfg)
+    print(f"\nConvening the AI analyst desk ({tcfg.model}) on "
+          f"{len(symbols)} candidate(s)…\n", file=sys.stderr)
+    for sym in symbols:
+        try:
+            daily = prov.history(sym, period_days=args.days)
+            frames = {t: resample_ohlcv(daily, t)
+                      for t in ("daily", "weekly", "monthly")}
+            ctx = assemble_context(sym, daily, with_confluence_frames=frames)
+            print(desk.grade(sym, ctx, side=args.side).describe())
+            print()
+        except Exception as exc:  # noqa: BLE001
+            print(f"{sym}: skipped ({exc})")
+    print("[AI panel verdicts — educational only, not investment advice. "
+          "Grades reflect evidence + scrutiny, not a profit guarantee.]")
+
+
 def cmd_thesis(args, cfg):
     from .ai import ThesisConfig, ThesisWriter, assemble_context
     from .data import get_provider
@@ -790,6 +839,19 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--timeframe", choices=tf_choices, default="daily",
                     help="candle timeframe")
     pl.set_defaults(func=cmd_plan)
+
+    # ---- desk (AI analyst panel grading) ----
+    dk = sub.add_parser("desk",
+                        help="grade setups with the multi-agent AI analyst panel")
+    dk.add_argument("--symbols", help="comma-separated symbols to grade")
+    dk.add_argument("--universe", help="grade the top-N from this universe")
+    dk.add_argument("--watchlist", action="store_true",
+                    help="grade the top-N from your watchlist")
+    dk.add_argument("--side", choices=["long", "short"], default="long")
+    dk.add_argument("--top", type=int, default=3,
+                    help="how many top-ranked candidates to grade (cost control)")
+    dk.add_argument("--days", type=int, default=500, help="history window (days)")
+    dk.set_defaults(func=cmd_desk)
 
     # ---- thesis (AI-written) ----
     th = sub.add_parser("thesis",
