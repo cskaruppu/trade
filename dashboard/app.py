@@ -148,7 +148,7 @@ _k4.metric("Last cached scan", _last_scan_label())
 
 # ---- grouped sidebar navigation (industry-standard left nav) ---------------
 _NAV_GROUPS = {
-    "Discover": ["🏠 Home", "🚀 Opportunities", "💬 Ask AI"],
+    "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks", "💬 Ask AI"],
     "Analyse": ["📊 Analyse", "🎯 Confluence", "🧪 Pattern Edge", "🔎 Screener"],
     "Manage": ["⭐ Watchlist", "📈 Backtest"],
 }
@@ -192,6 +192,72 @@ if _page == "🏠 Home":
     st.divider()
     st.caption("EdgeForge · evidence-based, AI-native, private. "
                "Educational only — not investment advice.")
+
+
+# ---- Pattern Picks (focused pattern screener) ------------------------------
+if _page == "🏆 Pattern Picks":
+    st.subheader("Pattern picks")
+    st.caption("Find stocks forming specific chart patterns, each scored by its "
+               "**validated historical edge on that stock** (✓ = held up "
+               "out-of-sample). The strongest setups rise to the top.")
+    _PAT_CHOICES = {
+        "Cup & Handle": "cup_and_handle",
+        "Darvas Box": "darvas_box",
+        "Bull Flag": "flag",
+        "Double Bottom": "double_bottom",
+        "Ascending/Descending Triangle": "triangle",
+        "Head & Shoulders": "head_shoulders",
+    }
+    pp1, pp2 = st.columns([2, 1])
+    chosen = pp1.multiselect("Patterns", list(_PAT_CHOICES),
+                             default=["Cup & Handle", "Darvas Box"], key="pp_pat")
+    pp_uni = pp1.selectbox("Universe", list_universes(), index=0, key="pp_uni")
+    pp_brk = pp2.checkbox("Confirmed breakouts only", value=False, key="pp_brk")
+    pp_edge = pp2.checkbox("Score historical edge", value=True, key="pp_edge",
+                           help="backtests each pattern on each stock; slower")
+    if st.button("Scan for patterns", type="primary", disabled=not chosen):
+        from nsetrade.pattern_scan import scan_for_patterns
+        keys = [_PAT_CHOICES[c] for c in chosen]
+        syms = get_universe(pp_uni)
+        prog = st.progress(0.0)
+        hits, errors = scan_for_patterns(
+            syms, keys, provider=provider,
+            provider_config=provider_config(cfg, provider),
+            with_edge=pp_edge, only_breakouts=pp_brk,
+            on_progress=lambda d, t, s: prog.progress(d / t, text=s))
+        prog.empty()
+        st.session_state["pp_hits"] = [h.as_row() for h in hits]
+        st.session_state["pp_syms"] = [h.symbol for h in hits]
+
+    hits_rows = st.session_state.get("pp_hits")
+    if hits_rows is not None:
+        if not hits_rows:
+            st.warning("No matching patterns found on this universe.")
+        else:
+            st.dataframe(hits_rows, use_container_width=True, hide_index=True)
+            st.caption("edge = win-rate / past occurrences · robust ✓ = the edge "
+                       "held on data it never saw. Probability, not a guarantee.")
+            _tcfg_pp = ThesisConfig.from_config(cfg)
+            if not _tcfg_pp.enabled:
+                st.caption("💡 Add an Anthropic API key for an AI investment "
+                           "suggestion on any of these.")
+            else:
+                psel = st.selectbox("AI suggestion for", st.session_state["pp_syms"],
+                                    key="pp_sel")
+                if st.button("🤖 Analyse this pattern & suggest", key="pp_ai"):
+                    with st.spinner(f"Claude ({_tcfg_pp.model}) is analysing {psel}…"):
+                        try:
+                            daily = _daily(provider, psel, 500)
+                            frames = {t: resample_ohlcv(daily, t)
+                                      for t in ("daily", "weekly", "monthly")}
+                            ctx = assemble_context(psel, daily,
+                                                   with_confluence_frames=frames)
+                            st.markdown(ThesisWriter(_tcfg_pp).write(psel, ctx))
+                            st.caption("AI-generated, grounded in the pattern + its "
+                                       "historical edge. Educational only — not "
+                                       "investment advice.")
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"analysis failed: {exc}")
 
 
 # ---- Ask AI (natural-language screener) ------------------------------------

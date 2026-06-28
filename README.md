@@ -105,6 +105,9 @@ nsetrade plan RELIANCE --capital 200000 --risk 0.01
 nsetrade opportunities --universe nifty50 --top 15
 nsetrade opportunities --universe nifty50 --side short --ai
 
+# Find stocks forming specific patterns (Cup & Handle, Darvas Box) + their edge
+nsetrade picks --patterns cup_and_handle,darvas_box --universe nifty100
+
 # Cover the FULL NSE list, and precompute scans overnight for instant loading
 nsetrade refresh-universe                       # download the ~2000-stock NSE list
 nsetrade precompute --universe nse_all          # rank everything into a local cache

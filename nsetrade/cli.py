@@ -531,6 +531,34 @@ def cmd_opportunities(args, cfg):
               "Educational only — not investment advice.]")
 
 
+def cmd_picks(args, cfg):
+    """Scan a universe for specific chart patterns + their historical edge."""
+    from .pattern_scan import DEFAULT_PATTERNS, scan_for_patterns
+
+    provider, pconf = _resolve_provider(args, cfg)
+    symbols = _resolve_symbols(args, cfg)
+    keys = ([k.strip() for k in args.patterns.split(",") if k.strip()]
+            if args.patterns else DEFAULT_PATTERNS)
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    hits, errors = scan_for_patterns(
+        symbols, keys, provider=provider, provider_config=pconf,
+        with_edge=not args.no_edge, only_breakouts=args.breakouts_only,
+        on_progress=progress)
+    print("", file=sys.stderr)
+
+    if not hits:
+        print("No matching patterns found.")
+        return
+    import pandas as pd
+    print(f"\nPattern picks ({', '.join(keys)}) — best edge first:\n")
+    _print_table(pd.DataFrame([h.as_row() for h in hits]))
+    print("\nedge = win-rate/occurrences · robust ✓ = held out-of-sample. "
+          "Probability, not a guarantee.")
+
+
 def cmd_ask(args, cfg):
     """Natural-language screener: describe what you want, Claude builds the filter."""
     from .ai import ThesisConfig
@@ -881,6 +909,22 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--timeframe", choices=tf_choices, default="daily",
                     help="candle timeframe")
     pl.set_defaults(func=cmd_plan)
+
+    # ---- picks (focused pattern screener) ----
+    pk = sub.add_parser("picks",
+                        help="scan for specific patterns (cup_and_handle, darvas_box, …)")
+    pk.add_argument("--patterns",
+                    help="comma-separated detector keys "
+                         "(default: cup_and_handle,darvas_box)")
+    pk.add_argument("--universe", help="nifty50 | nifty100 | nifty500 | nse_all")
+    pk.add_argument("--symbols", help="comma-separated custom symbols")
+    pk.add_argument("--watchlist", action="store_true",
+                    help="scan your saved watchlist")
+    pk.add_argument("--breakouts-only", action="store_true",
+                    help="show confirmed breakouts only")
+    pk.add_argument("--no-edge", action="store_true",
+                    help="skip the historical-edge backtest (faster)")
+    pk.set_defaults(func=cmd_picks)
 
     # ---- ask (natural-language screener) ----
     ak = sub.add_parser("ask",
