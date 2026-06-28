@@ -101,6 +101,11 @@ nsetrade plan RELIANCE --capital 200000 --risk 0.01
 nsetrade opportunities --universe nifty50 --top 15
 nsetrade opportunities --universe nifty50 --side short --ai
 
+# Cover the FULL NSE list, and precompute scans overnight for instant loading
+nsetrade refresh-universe                       # download the ~2000-stock NSE list
+nsetrade precompute --universe nse_all          # rank everything into a local cache
+nsetrade opportunities --universe nse_all --cached   # read the cached ranking instantly
+
 # AI-written trade thesis (needs an Anthropic API key — see privacy note below)
 nsetrade thesis RELIANCE --confluence
 

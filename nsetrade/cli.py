@@ -415,8 +415,69 @@ def cmd_plan(args, cfg):
     print("\n" + plan.describe())
 
 
+def cmd_refresh_universe(args, cfg):
+    from .universe import refresh_nse_equity_list
+
+    print("Downloading the NSE equity master list…", file=sys.stderr)
+    try:
+        syms = refresh_nse_equity_list()
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(
+            f"Could not refresh the NSE list: {exc}\n"
+            f"Check your internet connection and try again.")
+    print(f"Cached {len(syms)} NSE symbols. Use them with: "
+          f"--universe nse_all")
+
+
+def cmd_precompute(args, cfg):
+    """Precompute an opportunity scan into the local cache (scheduled runs)."""
+    from .opportunities import rank_opportunities
+    from .scan_cache import ScanCache
+
+    provider, pconf = _resolve_provider(args, cfg)
+    universe = args.universe or "nifty50"
+    symbols = _resolve_symbols(args, cfg)
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    result = rank_opportunities(
+        symbols, provider=provider, provider_config=pconf,
+        period_days=args.days, side=args.side, with_edge=not args.no_edge,
+        top=0, on_progress=progress)  # top=0 → keep all, cache the full ranking
+    print("", file=sys.stderr)
+
+    rows = [o.as_row() for o in result.opportunities]
+    cache = ScanCache(args.db)
+    cache.save_run("opportunities", f"{universe}:{args.side}", rows,
+                   meta={"provider": provider, "errors": len(result.errors),
+                         "scanned": len(symbols)})
+    cache.prune(keep_per_key=5)
+    print(f"\nCached {len(rows)} ranked {args.side} setups for '{universe}' "
+          f"({len(result.errors)} symbols errored).\n"
+          f"View instantly in the dashboard or with:\n"
+          f"  nsetrade opportunities --universe {universe} --side {args.side} --cached")
+
+
 def cmd_opportunities(args, cfg):
     from .opportunities import rank_opportunities
+
+    # Fast path: read a precomputed scan from the cache.
+    if getattr(args, "cached", False):
+        from datetime import datetime
+        from .scan_cache import ScanCache
+        cache = ScanCache(getattr(args, "db", None))
+        hit = cache.latest("opportunities", f"{args.universe or 'nifty50'}:{args.side}")
+        if not hit:
+            raise SystemExit(
+                "No cached scan found for this universe/side. Run "
+                "'nsetrade scan' first (e.g. overnight via Task Scheduler).")
+        when = datetime.fromtimestamp(hit["created_at"]).strftime("%Y-%m-%d %H:%M")
+        rows = hit["rows"][:args.top]
+        print(f"\nTop {len(rows)} {args.side.upper()} opportunities "
+              f"(cached scan from {when}):\n")
+        _print_table(__import__("pandas").DataFrame(rows))
+        return
 
     provider, pconf = _resolve_provider(args, cfg)
     symbols = _resolve_symbols(args, cfg)
@@ -596,7 +657,29 @@ def build_parser() -> argparse.ArgumentParser:
                     help="skip the historical pattern-edge backtest (faster)")
     op.add_argument("--ai", action="store_true",
                     help="add a Claude portfolio read (needs an API key)")
+    op.add_argument("--cached", action="store_true",
+                    help="read a precomputed scan instead of recomputing")
+    op.add_argument("--db", help="scan cache path (default ~/.nsetrade/scans.db)")
     op.set_defaults(func=cmd_opportunities)
+
+    # ---- refresh-universe (download the full NSE list) ----
+    ru = sub.add_parser("refresh-universe",
+                        help="download the full NSE equity list (enables --universe nse_all)")
+    ru.set_defaults(func=cmd_refresh_universe)
+
+    # ---- precompute (rank a universe into the cache; for scheduled runs) ----
+    pc = sub.add_parser("precompute",
+                        help="precompute & cache an opportunity ranking (run nightly)")
+    pc.add_argument("--universe", help="nifty50 | nifty100 | nifty500 | nse_all")
+    pc.add_argument("--symbols", help="comma-separated custom symbols")
+    pc.add_argument("--watchlist", action="store_true",
+                    help="scan your saved watchlist")
+    pc.add_argument("--side", choices=["long", "short"], default="long")
+    pc.add_argument("--days", type=int, default=500, help="history window (days)")
+    pc.add_argument("--no-edge", action="store_true",
+                    help="skip the pattern-edge backtest (much faster)")
+    pc.add_argument("--db", help="scan cache path (default ~/.nsetrade/scans.db)")
+    pc.set_defaults(func=cmd_precompute)
 
     b = sub.add_parser("backtest",
                        help="backtest a strategy (risk-managed by default)")

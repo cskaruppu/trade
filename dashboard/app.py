@@ -28,7 +28,7 @@ from nsetrade.resample import resample_ohlcv, scale_period_days
 from nsetrade.screener import screen
 from nsetrade.signals.engine import signal_for_frame
 from nsetrade.tradeplan import trade_plan
-from nsetrade.universe import UNIVERSES, get_universe
+from nsetrade.universe import UNIVERSES, get_universe, list_universes
 
 st.set_page_config(page_title="nsetrade", page_icon="📈", layout="wide")
 cfg = load_config()
@@ -98,14 +98,16 @@ with tab_o:
     oc1, oc2, oc3 = st.columns([2, 1, 1])
     o_src = oc1.radio("Source", ["Universe", "My watchlist"], horizontal=True,
                       key="opp_src")
-    o_uni = oc1.selectbox("Universe", list(UNIVERSES), index=0,
+    o_uni = oc1.selectbox("Universe", list_universes(), index=0,
                           disabled=(o_src != "Universe"), key="opp_uni")
     o_side = oc2.radio("Side", ["long", "short"], horizontal=True, key="opp_side")
     o_top = oc3.slider("Show top", 5, 40, 15, step=5, key="opp_top")
     o_edge = oc2.checkbox("Include pattern edge", value=True, key="opp_edge",
                           help="backtests each pattern's history; slower but "
                                "stronger evidence")
-    if st.button("Find opportunities", type="primary"):
+
+    b1, b2 = st.columns(2)
+    if b1.button("Find opportunities (live)", type="primary"):
         from nsetrade.opportunities import rank_opportunities
         syms = wl.load() if o_src == "My watchlist" else get_universe(o_uni)
         if not syms:
@@ -119,10 +121,32 @@ with tab_o:
                 on_progress=lambda d, t, s: prog.progress(d / t, text=s))
             prog.empty()
             st.session_state["opp_result"] = res
-        # fall through to render below
+            st.session_state.pop("opp_cached_when", None)
+    if b2.button("⚡ Load cached scan (instant)",
+                 help="reads the latest 'nsetrade precompute' run — set one up "
+                      "to run nightly for big universes"):
+        from datetime import datetime
+        from nsetrade.scan_cache import ScanCache
+        hit = ScanCache().latest("opportunities", f"{o_uni}:{o_side}")
+        if not hit:
+            st.warning("No cached scan for this universe/side yet. Run "
+                       "`nsetrade precompute --universe %s --side %s` (or the "
+                       "nightly task)." % (o_uni, o_side))
+        else:
+            st.session_state["opp_cached_rows"] = hit["rows"][:o_top]
+            st.session_state["opp_cached_when"] = datetime.fromtimestamp(
+                hit["created_at"]).strftime("%Y-%m-%d %H:%M")
+            st.session_state.pop("opp_result", None)
 
+    cached_when = st.session_state.get("opp_cached_when")
     res = st.session_state.get("opp_result")
-    if res is not None:
+    if cached_when:
+        st.info(f"Showing cached scan from **{cached_when}**.")
+        st.dataframe(st.session_state["opp_cached_rows"],
+                     use_container_width=True, hide_index=True)
+        st.caption("score=composite · conviction=multi-timeframe trend · "
+                   "edge=pattern win-rate/sample · rr=reward:risk")
+    elif res is not None:
         df = res.to_frame()
         if df.empty:
             st.warning("No opportunities found on this universe/side.")
