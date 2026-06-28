@@ -805,8 +805,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--version", action="version", version=f"nsetrade {__version__}")
     p.add_argument("--config", help="path to config.yaml (optional)")
-    p.add_argument("--provider", help="data provider: yfinance | kite "
-                                       "(overrides config)")
+    p.add_argument("--provider", help="data provider: yfinance | kite | bhavcopy "
+                                       "(overrides config; goes before the command)")
     sub = p.add_subparsers(dest="command", required=True)
 
     tf_choices = ["daily", "weekly", "monthly"]
