@@ -33,18 +33,41 @@ from nsetrade.universe import UNIVERSES, get_universe, list_universes
 st.set_page_config(page_title="nsetrade", page_icon="📈", layout="wide")
 cfg = load_config()
 
-# ---- light cosmetic polish -------------------------------------------------
+# ---- professional polish ---------------------------------------------------
 st.markdown(
     """
     <style>
-      .block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
-      [data-testid="stMetricValue"] {font-size: 1.4rem;}
-      h1, h2, h3 {letter-spacing: -0.01em;}
-      .stTabs [data-baseweb="tab"] {font-size: 1rem;}
+      .block-container {padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px;}
+      [data-testid="stMetricValue"] {font-size: 1.5rem; font-weight: 700;}
+      [data-testid="stMetricLabel"] {opacity: 0.75;}
+      h1, h2, h3 {letter-spacing: -0.02em;}
+      .stTabs [data-baseweb="tab"] {font-size: 1rem; font-weight: 600;}
+      .stTabs [data-baseweb="tab-list"] {gap: 4px;}
+      /* hero header banner */
+      .nt-hero {
+        background: linear-gradient(110deg, #0f2d2a 0%, #11151c 55%, #1a1430 100%);
+        border: 1px solid #1f2a33; border-radius: 14px;
+        padding: 18px 22px; margin-bottom: 14px;
+      }
+      .nt-hero h1 {margin: 0; font-size: 1.7rem; color: #e8f3f1;}
+      .nt-hero .tag {color: #79c7bd; font-size: 0.95rem; margin-top: 2px;}
+      .nt-hero .sub {color: #8b97a3; font-size: 0.82rem; margin-top: 6px;}
+      /* grade badges */
+      .nt-grade {display:inline-block; min-width: 2.1em; text-align:center;
+        font-weight: 800; border-radius: 8px; padding: 2px 10px; color: #06120f;}
+      .nt-A {background:#26a69a;} .nt-B {background:#7cc47b;}
+      .nt-C {background:#e3b341; color:#1a1400;} .nt-D {background:#e8915a; color:#1a0c00;}
+      .nt-F {background:#ef5350; color:#1a0000;}
+      .nt-pill {display:inline-block; background:#161b24; border:1px solid #28323d;
+        border-radius:999px; padding:3px 12px; margin-right:6px; font-size:0.8rem;}
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def _grade_badge(grade: str) -> str:
+    return f'<span class="nt-grade nt-{grade}">{grade}</span>'
 
 
 @st.cache_data(show_spinner=False)
@@ -82,6 +105,38 @@ timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
                              horizontal=True)
 st.sidebar.caption("Kite credentials come from config.yaml. yfinance needs none.")
 st.sidebar.warning("Research/education only — not investment advice.")
+
+# ---- hero header + KPI strip ----------------------------------------------
+st.markdown(
+    """
+    <div class="nt-hero">
+      <h1>📈 nsetrade</h1>
+      <div class="tag">Evidence-based NSE analysis · AI analyst desk · runs 100% on your machine</div>
+      <div class="sub">Every signal is backtestable. Patterns carry their real historical edge.
+      Nothing leaves this laptop except the optional AI calls you trigger.</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def _last_scan_label():
+    try:
+        from datetime import datetime
+        from nsetrade.scan_cache import ScanCache
+        runs = ScanCache().list_runs(limit=1)
+        if runs:
+            return datetime.fromtimestamp(runs[0]["created_at"]).strftime("%d %b %H:%M")
+    except Exception:  # noqa: BLE001
+        pass
+    return "—"
+
+
+_k1, _k2, _k3, _k4 = st.columns(4)
+_k1.metric("Universes", len(list_universes()))
+_k2.metric("Data provider", provider)
+_k3.metric("Timeframe", timeframe)
+_k4.metric("Last cached scan", _last_scan_label())
 
 tab_o, tab_a, tab_w, tab_c, tab_e, tab_s, tab_b = st.tabs(
     ["🚀 Opportunities", "📊 Analyse", "⭐ Watchlist", "🎯 Confluence",
@@ -154,20 +209,67 @@ with tab_o:
             st.dataframe(df, use_container_width=True, hide_index=True)
             st.caption("score=composite · conviction=multi-timeframe trend · "
                        "edge=pattern win-rate/sample · rr=reward:risk")
+
+            # market map: opportunity score across the shortlist
+            try:
+                import plotly.express as px
+                fig = px.bar(df.iloc[::-1], x="score", y="symbol",
+                             orientation="h", color="score",
+                             color_continuous_scale="Tealgrn",
+                             title="Opportunity score map")
+                fig.update_layout(height=max(220, 26 * len(df)),
+                                  template="plotly_dark", margin=dict(l=8, r=8, t=40, b=8),
+                                  coloraxis_showscale=False)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception:  # noqa: BLE001
+                pass
+
             tcfg = ThesisConfig.from_config(cfg)
             if not tcfg.enabled:
-                st.caption("💡 Add an Anthropic API key to get an AI portfolio "
-                           "read over these candidates.")
-            elif st.button("🤖 AI portfolio read", key="opp_ai"):
-                with st.spinner(f"Asking Claude ({tcfg.model})…"):
-                    try:
-                        st.markdown(ThesisWriter(tcfg).summarize_opportunities(
-                            res.opportunities, side=res.opportunities[0].side
-                            if res.opportunities else "long"))
-                        st.caption("AI-generated, grounded in the table above. "
-                                   "Educational only — not investment advice.")
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"AI read failed: {exc}")
+                st.caption("💡 Add an Anthropic API key for an AI portfolio read "
+                           "and the multi-agent analyst-desk grades.")
+            else:
+                cda, cdb = st.columns(2)
+                if cda.button("🤖 AI portfolio read", key="opp_ai"):
+                    with st.spinner(f"Asking Claude ({tcfg.model})…"):
+                        try:
+                            st.markdown(ThesisWriter(tcfg).summarize_opportunities(
+                                res.opportunities,
+                                side=res.opportunities[0].side
+                                if res.opportunities else "long"))
+                            st.caption("AI-generated, grounded above. "
+                                       "Educational only — not advice.")
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"AI read failed: {exc}")
+                n_grade = min(3, len(res.opportunities))
+                if cdb.button(f"🧠 Grade top {n_grade} with AI analyst desk",
+                              key="opp_desk"):
+                    from nsetrade.analyst_desk import AnalystDesk
+                    from nsetrade.ai import assemble_context
+                    desk = AnalystDesk(tcfg)
+                    with st.spinner("Convening the analyst panel "
+                                    "(several Claude calls per stock)…"):
+                        for o in res.opportunities[:n_grade]:
+                            try:
+                                daily = _daily(provider, o.symbol, 500)
+                                frames = {t: resample_ohlcv(daily, t)
+                                          for t in ("daily", "weekly", "monthly")}
+                                ctx = assemble_context(o.symbol, daily,
+                                                       with_confluence_frames=frames)
+                                g = desk.grade(o.symbol, ctx, side=o.side)
+                                st.markdown(
+                                    f"### {_grade_badge(g.grade)} &nbsp; {g.symbol} "
+                                    f"<span class='nt-pill'>panel {g.composite:.0f}/100</span>",
+                                    unsafe_allow_html=True)
+                                st.caption(g.summary)
+                                vrows = [{"agent": v.title, "score": v.score,
+                                          "stance": v.stance} for v in g.verdicts]
+                                st.dataframe(vrows, use_container_width=True,
+                                             hide_index=True)
+                            except Exception as exc:  # noqa: BLE001
+                                st.write(f"{o.symbol}: skipped ({exc})")
+                    st.caption("Panel grades reflect evidence + scrutiny, not a "
+                               "profit guarantee. Educational only.")
 
 
 # ---- Analyse ---------------------------------------------------------------

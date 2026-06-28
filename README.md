@@ -25,6 +25,7 @@ risk real money.
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
 | **Opportunity ranker** | Scans a whole universe and ranks the most tradeable setups by **conviction + historical pattern edge + reward:risk** — surfaces the best evidence‑based candidates (probability, not a profit promise). |
+| **AI analyst desk** | Optional: a panel of specialised AI agents (trend, pattern‑edge verifier, risk, devil's‑advocate) scrutinise a candidate and assign an **A–F grade** — a skeptic argument can veto a top grade. Raises shortlist *precision*, the honest version of "accuracy". |
 | **AI trade thesis** | Optional: Claude reads the numeric analysis and writes a structured, grounded trade thesis (bias / setup / evidence / plan / risk), and can give a portfolio‑level read over the ranked opportunities. |
 | **Pattern edge** | Backtest whether a chart pattern *historically worked* on a stock: hit‑rate, average forward return, target‑hit rate — evidence, not just a shape. |
 | **Confluence** | Rank stocks where **daily + weekly + monthly** signals agree, with one weighted conviction score. |
@@ -105,6 +106,10 @@ nsetrade opportunities --universe nifty50 --side short --ai
 nsetrade refresh-universe                       # download the ~2000-stock NSE list
 nsetrade precompute --universe nse_all          # rank everything into a local cache
 nsetrade opportunities --universe nse_all --cached   # read the cached ranking instantly
+
+# AI analyst desk — a panel of agents (trend, edge, risk, skeptic) grades setups A-F
+nsetrade desk --universe nifty50 --top 3
+nsetrade desk --symbols RELIANCE,TCS
 
 # AI-written trade thesis (needs an Anthropic API key — see privacy note below)
 nsetrade thesis RELIANCE --confluence
