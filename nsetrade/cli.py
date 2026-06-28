@@ -424,6 +424,36 @@ def cmd_plan(args, cfg):
     print("\n" + plan.describe())
 
 
+def cmd_fetch_bhavcopy(args, cfg):
+    """Download NSE Bhavcopy (bulk EOD, all stocks) into the local store."""
+    import datetime as dt
+
+    from .bhavcopy import BhavcopyStore, download_range
+
+    end = dt.date.today()
+    start = end - dt.timedelta(days=args.days)
+    store = BhavcopyStore(args.db)
+
+    def progress(done, total, d):
+        print(f"\r  {d}  ({done}/{total})", end="", file=sys.stderr)
+
+    print(f"Fetching NSE Bhavcopy {start} → {end} into the local store…\n"
+          f"(one file per trading day; weekends/holidays skipped)",
+          file=sys.stderr)
+    try:
+        summary = download_range(store, start, end, on_progress=progress)
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(f"\nBhavcopy download failed: {exc}\n"
+                         f"Check your internet connection and try again.")
+    print("", file=sys.stderr)
+    lo, hi = store.date_range()
+    print(f"Done. Fetched {summary['trading_days']} trading days; "
+          f"store now holds {len(store.symbols())} symbols "
+          f"({lo} → {hi}).\n"
+          f"Use it with: --provider bhavcopy  (e.g. "
+          f"nsetrade opportunities --universe nse_all --provider bhavcopy)")
+
+
 def cmd_refresh_universe(args, cfg):
     from .universe import refresh_nse_equity_list
 
@@ -825,6 +855,14 @@ def build_parser() -> argparse.ArgumentParser:
     ru = sub.add_parser("refresh-universe",
                         help="download the full NSE equity list (enables --universe nse_all)")
     ru.set_defaults(func=cmd_refresh_universe)
+
+    # ---- fetch-bhavcopy (bulk EOD data for the whole NSE) ----
+    fb = sub.add_parser("fetch-bhavcopy",
+                        help="download NSE Bhavcopy (all stocks, EOD) to a local store")
+    fb.add_argument("--days", type=int, default=400,
+                    help="how many calendar days back to fetch (default 400)")
+    fb.add_argument("--db", help="store path (default ~/.nsetrade/bhavcopy.db)")
+    fb.set_defaults(func=cmd_fetch_bhavcopy)
 
     # ---- precompute (rank a universe into the cache; for scheduled runs) ----
     pc = sub.add_parser("precompute",

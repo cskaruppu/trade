@@ -31,6 +31,12 @@ def get_provider(name: str, config: Optional[dict] = None) -> DataProvider:
         allowed = {"api_key", "access_token", "exchange"}
         return KiteProvider(**{k: v for k, v in opts.items() if k in allowed})
 
+    if name in ("bhavcopy", "nse_bhavcopy"):
+        from ..bhavcopy import BhavcopyProvider
+
+        allowed = {"db", "adjust"}
+        return BhavcopyProvider(**{k: v for k, v in opts.items() if k in allowed})
+
     raise ValueError(
-        f"unknown provider {name!r}. Available: 'yfinance', 'kite'."
+        f"unknown provider {name!r}. Available: 'yfinance', 'kite', 'bhavcopy'."
     )

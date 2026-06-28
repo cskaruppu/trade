@@ -110,9 +110,11 @@ def _verdict_color(v: str) -> str:
 # ---- sidebar ---------------------------------------------------------------
 st.sidebar.title("⚡ EdgeForge")
 st.sidebar.caption("Forge an edge from evidence — runs only on this machine.")
+_PROVIDERS = ["yfinance", "kite", "bhavcopy"]
 provider = st.sidebar.selectbox(
-    "Data provider", ["yfinance", "kite"],
-    index=0 if cfg.get("default_provider") != "kite" else 1,
+    "Data provider", _PROVIDERS,
+    index=_PROVIDERS.index(cfg.get("default_provider", "yfinance"))
+    if cfg.get("default_provider", "yfinance") in _PROVIDERS else 0,
 )
 timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
                              horizontal=True)
@@ -137,6 +139,9 @@ with st.sidebar.expander("➕ Full NSE coverage (~2000 stocks)"):
     st.caption("Tip: scanning ~2000 stocks live is slow — run "
                "`nsetrade precompute --universe nse_all --with-patterns` nightly "
                "and use the cached/auto-loaded results.")
+    st.caption("For reliable full-NSE data without per-stock API limits, build a "
+               "local store: `nsetrade fetch-bhavcopy --days 400`, then pick the "
+               "**bhavcopy** data provider above.")
 
 st.sidebar.warning("Research/education only — not investment advice.")
 

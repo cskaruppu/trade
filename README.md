@@ -117,6 +117,10 @@ nsetrade refresh-universe                       # download the ~2000-stock NSE l
 nsetrade precompute --universe nse_all          # rank everything into a local cache
 nsetrade opportunities --universe nse_all --cached   # read the cached ranking instantly
 
+# Bulk EOD data for the whole NSE via official Bhavcopy (no per-stock API limits)
+nsetrade fetch-bhavcopy --days 400              # build a local store (1 file/day)
+nsetrade opportunities --universe nse_all --provider bhavcopy
+
 # AI analyst desk — a panel of agents (trend, edge, risk, skeptic) grades setups A-F
 nsetrade desk --universe nifty50 --top 3
 nsetrade desk --symbols RELIANCE,TCS
