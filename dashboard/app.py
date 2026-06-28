@@ -112,6 +112,25 @@ provider = st.sidebar.selectbox(
 timeframe = st.sidebar.radio("Timeframe", ["daily", "weekly", "monthly"],
                              horizontal=True)
 st.sidebar.caption("Kite credentials come from config.yaml. yfinance needs none.")
+
+with st.sidebar.expander("➕ Full NSE coverage (~2000 stocks)"):
+    st.caption("Index lists cover up to Nifty 500. Download the full NSE equity "
+               "list once to scan **everything** as the 'nse_all' universe — it "
+               "then appears in every dropdown.")
+    if st.button("Download / refresh full NSE list"):
+        from nsetrade.universe import refresh_nse_equity_list
+        with st.spinner("Downloading the NSE equity list…"):
+            try:
+                syms = refresh_nse_equity_list()
+                st.success(f"Added {len(syms)} NSE stocks as 'nse_all'. "
+                           "Pick it in any Universe dropdown.")
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Download failed: {exc}")
+    st.caption("Tip: scanning ~2000 stocks live is slow — run "
+               "`nsetrade precompute --universe nse_all --with-patterns` nightly "
+               "and use the cached/auto-loaded results.")
+
 st.sidebar.warning("Research/education only — not investment advice.")
 
 # ---- hero header + KPI strip ----------------------------------------------
