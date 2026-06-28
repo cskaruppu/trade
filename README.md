@@ -1,4 +1,6 @@
-# nsetrade — NSE Stock Pattern & Signal Toolkit
+# ⚡ EdgeForge — Evidence-Based NSE Analysis & AI Trading Desk
+
+> *Forge an edge from evidence.* (Python package: `nsetrade`.)
 
 A Python library + command-line tool to analyse stocks listed on India's
 **National Stock Exchange (NSE)**, detect high-probability technical patterns,

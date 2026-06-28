@@ -1,12 +1,14 @@
-"""nsetrade — professional local dashboard.
+"""EdgeForge — professional local trading-analysis dashboard.
 
 Run with:
     pip install -e ".[dashboard]"
     streamlit run dashboard/app.py
 
-Tabs: Analyse (interactive candlestick chart + signal + patterns + trade plan),
-Watchlist (manage + pattern scan), Confluence (multi-timeframe agreement),
-Pattern Edge (historical follow-through), Screener and Backtest.
+Grouped sidebar navigation:
+  Discover — Home, Opportunities, Ask AI (natural-language screener)
+  Analyse  — Analyse (chart + patterns + Fibonacci + AI read), Confluence,
+             Pattern Edge, Screener
+  Manage   — Watchlist, Backtest
 
 Binds to localhost only (see .streamlit/config.toml) — private to your machine.
 """
@@ -36,7 +38,7 @@ except ImportError:
     def list_universes():
         return list(UNIVERSES)
 
-st.set_page_config(page_title="nsetrade", page_icon="📈", layout="wide")
+st.set_page_config(page_title="EdgeForge", page_icon="⚡", layout="wide")
 cfg = load_config()
 
 # ---- professional polish ---------------------------------------------------
@@ -101,8 +103,8 @@ def _verdict_color(v: str) -> str:
 
 
 # ---- sidebar ---------------------------------------------------------------
-st.sidebar.title("📈 nsetrade")
-st.sidebar.caption("Private NSE analysis — runs only on this machine.")
+st.sidebar.title("⚡ EdgeForge")
+st.sidebar.caption("Forge an edge from evidence — runs only on this machine.")
 provider = st.sidebar.selectbox(
     "Data provider", ["yfinance", "kite"],
     index=0 if cfg.get("default_provider") != "kite" else 1,
@@ -116,8 +118,8 @@ st.sidebar.warning("Research/education only — not investment advice.")
 st.markdown(
     """
     <div class="nt-hero">
-      <h1>📈 nsetrade</h1>
-      <div class="tag">Evidence-based NSE analysis · AI analyst desk · runs 100% on your machine</div>
+      <h1>⚡ EdgeForge</h1>
+      <div class="tag">Forge an edge from evidence · AI analyst desk · runs 100% on your machine</div>
       <div class="sub">Every signal is backtestable. Patterns carry their real historical edge.
       Nothing leaves this laptop except the optional AI calls you trigger.</div>
     </div>
@@ -144,14 +146,56 @@ _k2.metric("Data provider", provider)
 _k3.metric("Timeframe", timeframe)
 _k4.metric("Last cached scan", _last_scan_label())
 
-tab_o, tab_q, tab_a, tab_c, tab_e, tab_s, tab_w, tab_b = st.tabs(
-    ["🚀 Opportunities", "💬 Ask AI", "📊 Analyse", "🎯 Confluence",
-     "🧪 Pattern Edge", "🔎 Screener", "⭐ Watchlist", "📈 Backtest"]
-)
+# ---- grouped sidebar navigation (industry-standard left nav) ---------------
+_NAV_GROUPS = {
+    "Discover": ["🏠 Home", "🚀 Opportunities", "💬 Ask AI"],
+    "Analyse": ["📊 Analyse", "🎯 Confluence", "🧪 Pattern Edge", "🔎 Screener"],
+    "Manage": ["⭐ Watchlist", "📈 Backtest"],
+}
+_PAGES = [p for group in _NAV_GROUPS.values() for p in group]
+# captions show the grouping (Discover / Analyse / Manage) above one radio
+_GROUP_OF = {p: g for g, items in _NAV_GROUPS.items() for p in items}
+st.sidebar.divider()
+st.sidebar.markdown("### Menu")
+_page = st.sidebar.radio(
+    "Navigate", _PAGES, label_visibility="collapsed",
+    captions=[_GROUP_OF[p] for p in _PAGES])
+
+
+# ---- Home -----------------------------------------------------------------
+if _page == "🏠 Home":
+    st.subheader("Today at a glance")
+    hit = None
+    try:
+        from nsetrade.scan_cache import ScanCache
+        for kind, uni in [("opportunities", "nifty100:long"),
+                          ("opportunities", "nifty50:long")]:
+            hit = ScanCache().latest(kind, uni)
+            if hit:
+                break
+    except Exception:  # noqa: BLE001
+        hit = None
+    if hit and hit["rows"]:
+        from datetime import datetime
+        when = datetime.fromtimestamp(hit["created_at"]).strftime("%d %b %H:%M")
+        st.markdown(f"**Top setups from your last scan** ({when})")
+        st.dataframe(hit["rows"][:10], use_container_width=True, hide_index=True)
+        st.caption("Open **🚀 Opportunities** to scan live, or **💬 Ask AI** to "
+                   "search in plain English.")
+    else:
+        st.info("No cached scan yet. Get started:")
+        st.markdown(
+            "- **🚀 Opportunities** — rank the most tradeable setups in a universe\n"
+            "- **💬 Ask AI** — describe what you want; Claude builds the filter\n"
+            "- **📊 Analyse** — deep-dive one stock (chart, patterns, Fibonacci, AI read)\n"
+            "- Run `nsetrade precompute` nightly so this page loads instant rankings")
+    st.divider()
+    st.caption("EdgeForge · evidence-based, AI-native, private. "
+               "Educational only — not investment advice.")
 
 
 # ---- Ask AI (natural-language screener) ------------------------------------
-with tab_q:
+if _page == "💬 Ask AI":
     st.subheader("Ask in plain English")
     st.caption("Describe the setup you want — Claude builds the filter, then the "
                "engine ranks and matches it. The LLM only writes the filter; the "
@@ -190,7 +234,7 @@ with tab_q:
 
 
 # ---- Top Opportunities -----------------------------------------------------
-with tab_o:
+if _page == "🚀 Opportunities":
     st.subheader("Top trade opportunities")
     st.caption("Ranks each stock by **multi-timeframe conviction + historical "
                "pattern edge + reward:risk** — the highest-conviction, "
@@ -318,7 +362,7 @@ with tab_o:
 
 
 # ---- Analyse ---------------------------------------------------------------
-with tab_a:
+if _page == "📊 Analyse":
     col1, col2, col3 = st.columns([2, 1, 1])
     symbol = col1.text_input("NSE symbol", value="RELIANCE").strip().upper()
     days = col2.slider("History (days)", 200, 1500, 500, step=50)
@@ -437,7 +481,7 @@ with tab_a:
 
 
 # ---- Watchlist -------------------------------------------------------------
-with tab_w:
+if _page == "⭐ Watchlist":
     st.subheader("Your watchlist")
     st.caption("Stored locally in watchlist.txt (git-ignored, stays private).")
     current = wl.load()
@@ -489,7 +533,7 @@ with tab_w:
 
 
 # ---- Confluence ------------------------------------------------------------
-with tab_c:
+if _page == "🎯 Confluence":
     st.subheader("Multi-timeframe confluence")
     st.caption("Stocks where daily, weekly and monthly signals agree score "
                "highest — higher conviction than a single timeframe.")
@@ -521,7 +565,7 @@ with tab_c:
 
 
 # ---- Pattern Edge ----------------------------------------------------------
-with tab_e:
+if _page == "🧪 Pattern Edge":
     st.subheader("Pattern edge — does it historically work?")
     st.caption("For each structural pattern, how past breakouts on this stock "
                "performed afterwards. Small samples are noisy — read the count.")
@@ -551,7 +595,7 @@ with tab_e:
 
 
 # ---- Screener --------------------------------------------------------------
-with tab_s:
+if _page == "🔎 Screener":
     st.subheader("Screen & rank")
     ssrc = st.radio("Source", ["Universe", "My watchlist"], horizontal=True,
                     key="scr_src")
@@ -583,7 +627,7 @@ with tab_s:
 
 
 # ---- Backtest --------------------------------------------------------------
-with tab_b:
+if _page == "📈 Backtest":
     st.subheader("Risk-managed backtest")
     b1, b2, b3 = st.columns(3)
     bsym = b1.text_input("Symbol", value="RELIANCE", key="bt_sym").strip().upper()
