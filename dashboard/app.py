@@ -446,17 +446,26 @@ if _page == "🏆 Pattern Picks":
 
             # ---- view a pick's chart with the pattern drawn on it ----
             psel = None
+            pp_tf = "daily"
             if rows:
                 st.divider()
                 st.markdown("### 📈 View the chart with the pattern marked")
-                psel = st.selectbox("Pick a stock from the filtered results",
-                                    [r["symbol"] for r in rows], key="pp_sel")
+                cc1, cc2 = st.columns([2, 1])
+                psel = cc1.selectbox("Pick a stock from the filtered results",
+                                     [r["symbol"] for r in rows], key="pp_sel")
+                pp_tf = cc2.radio("Chart timeframe", ["daily", "weekly", "monthly"],
+                                  horizontal=True, key="pp_tf")
             pdaily = None
             if psel:
                 try:
-                    pdaily = _daily(provider, psel, 500)
-                    pfig, pnotes = build_figure(f"{psel} · daily", pdaily, bars=220,
-                                                show_patterns=True, show_fib=False)
+                    _tf_days = {"daily": 600, "weekly": 1500, "monthly": 3650}[pp_tf]
+                    pdaily = _daily(provider, psel, _tf_days)
+                    pchart = resample_ohlcv(pdaily, pp_tf)
+                    # only draw the pattern(s) the user selected in the filter
+                    _only = {_PAT_CHOICES[c] for c in chosen} or None
+                    pfig, pnotes = build_figure(f"{psel} · {pp_tf}", pchart, bars=220,
+                                                show_patterns=True, show_fib=False,
+                                                only_keys=_only)
                     # confidence badge drawn on the chart from the result row
                     prows = [r for r in rows if r.get("symbol") == psel]
                     if prows:
@@ -480,10 +489,16 @@ if _page == "🏆 Pattern Picks":
                             f"occurrences · robust ✓ = held out-of-sample · "
                             f"vol ✓ = breakout on above-average volume.",
                             unsafe_allow_html=True)
+                    # target details (measured move) surfaced as text
+                    _tgt = [n for n in pnotes if "Upside potential" in n]
+                    if _tgt:
+                        st.success("🎯 " + _tgt[0]
+                                   + "  —  measured move = breakout + the pattern's "
+                                   "own height. A projection, not a prediction.")
                     if pnotes:
-                        st.caption("Drawn on the chart — breakout level (dashed) and "
-                                   "the pattern's range (shaded): "
-                                   + " · ".join(pnotes))
+                        st.caption(f"On the **{pp_tf}** chart: pattern shape, breakout "
+                                   "level (dashed), shaded target zone. Switch the "
+                                   "timeframe above to view weekly / monthly.")
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"could not draw {psel}: {exc}")
 

@@ -32,8 +32,14 @@ def build_figure(
     bars: int = 200,
     show_patterns: bool = True,
     show_fib: bool = False,
+    only_keys=None,
 ):
-    """Return a Plotly Figure for ``df`` (last ``bars`` rows)."""
+    """Return a Plotly Figure for ``df`` (last ``bars`` rows).
+
+    ``only_keys`` (a set of detector keys, e.g. ``{"cup_and_handle"}``) restricts
+    the drawn patterns/target to just those — so the chart focuses on the
+    pattern the user selected instead of every detected shape.
+    """
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -75,6 +81,9 @@ def build_figure(
     pattern_notes = []
     if show_patterns:
         _matches = detect_advanced(df)
+        if only_keys:
+            from .ai import _pattern_key
+            _matches = [m for m in _matches if _pattern_key(m.name) in only_keys]
         for m in _matches:
             pattern_notes.append(m.describe())
             color = "#26a69a" if m.direction == "bullish" else "#ef5350"
