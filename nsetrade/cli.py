@@ -545,6 +545,32 @@ def cmd_opportunities(args, cfg):
               "Educational only — not investment advice.]")
 
 
+def cmd_breakouts(args, cfg):
+    """Scan a universe for stocks at new N-period highs."""
+    from .breakout import PERIODS, scan_breakouts
+
+    provider, pconf = _resolve_provider(args, cfg)
+    symbols = _resolve_symbols(args, cfg)
+    if args.period not in PERIODS:
+        raise SystemExit(f"unknown period {args.period!r}. "
+                         f"Choose from: {', '.join(PERIODS)}")
+
+    def progress(done, total, sym):
+        print(f"\r  scanning {done}/{total}  {sym:<14}", end="", file=sys.stderr)
+
+    res, errors = scan_breakouts(
+        symbols, period=args.period, tol=args.tol / 100.0, provider=provider,
+        provider_config=pconf, on_progress=progress)
+    print("", file=sys.stderr)
+    if not res:
+        print(f"No stocks at a new {args.period} high.")
+        return
+    import pandas as pd
+    print(f"\n{len(res)} stocks breaking out to new {args.period} highs:\n")
+    _print_table(pd.DataFrame([b.as_row() for b in res]))
+    print("\nConfirm trend + volume before acting. Educational only.")
+
+
 def cmd_picks(args, cfg):
     """Scan a universe for specific chart patterns + their historical edge."""
     from .pattern_scan import DEFAULT_PATTERNS, scan_for_patterns
@@ -925,6 +951,19 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--timeframe", choices=tf_choices, default="daily",
                     help="candle timeframe")
     pl.set_defaults(func=cmd_plan)
+
+    # ---- breakouts (new N-period high scanner) ----
+    bk = sub.add_parser("breakouts",
+                        help="find stocks at new highs (3 months/6 months/52 weeks/…)")
+    bk.add_argument("--period", default="52 weeks",
+                    help="1 month | 3 months | 6 months | 52 weeks | 3 years | All-time")
+    bk.add_argument("--universe", help="nifty50 | nifty100 | nifty500 | nse_all")
+    bk.add_argument("--symbols", help="comma-separated custom symbols")
+    bk.add_argument("--watchlist", action="store_true",
+                    help="scan your saved watchlist")
+    bk.add_argument("--tol", type=float, default=0.0,
+                    help="within %% of the prior high to still count (e.g. 2)")
+    bk.set_defaults(func=cmd_breakouts)
 
     # ---- picks (focused pattern screener) ----
     pk = sub.add_parser("picks",

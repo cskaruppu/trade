@@ -148,18 +148,26 @@ _k4.metric("Last cached scan", _last_scan_label())
 
 # ---- grouped sidebar navigation (industry-standard left nav) ---------------
 _NAV_GROUPS = {
-    "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks", "💬 Ask AI"],
+    "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks",
+                 "📈 Breakouts", "💬 Ask AI"],
     "Analyse": ["📊 Analyse", "🎯 Confluence", "🧪 Pattern Edge", "🔎 Screener"],
-    "Manage": ["⭐ Watchlist", "📈 Backtest"],
+    "Manage": ["⭐ Watchlist", "📉 Backtest"],
 }
 _PAGES = [p for group in _NAV_GROUPS.values() for p in group]
-# captions show the grouping (Discover / Analyse / Manage) above one radio
-_GROUP_OF = {p: g for g, items in _NAV_GROUPS.items() for p in items}
+if st.session_state.get("nav_page") not in _PAGES:
+    st.session_state["nav_page"] = _PAGES[0]
 st.sidebar.divider()
 st.sidebar.markdown("### Menu")
-_page = st.sidebar.radio(
-    "Navigate", _PAGES, label_visibility="collapsed",
-    captions=[_GROUP_OF[p] for p in _PAGES])
+# grouped nav: a section header per group, full-width buttons, active highlighted
+for _grp, _items in _NAV_GROUPS.items():
+    st.sidebar.caption(_grp.upper())
+    for _it in _items:
+        _active = st.session_state["nav_page"] == _it
+        if st.sidebar.button(_it, key=f"nav_{_it}", use_container_width=True,
+                             type="primary" if _active else "secondary"):
+            st.session_state["nav_page"] = _it
+            st.rerun()
+_page = st.session_state["nav_page"]
 
 
 # ---- Home -----------------------------------------------------------------
@@ -286,6 +294,42 @@ if _page == "🏆 Pattern Picks":
                                        "investment advice.")
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"analysis failed: {exc}")
+
+
+# ---- Breakouts (new N-period high scanner) ---------------------------------
+if _page == "📈 Breakouts":
+    from nsetrade.breakout import PERIODS, scan_breakouts
+    st.subheader("New-high breakouts")
+    st.caption("Stocks breaking out to a new **closing high** over the period you "
+               "choose — the classic momentum screen (3-month, 6-month, "
+               "52-week, multi-year, or all-time).")
+    bc1, bc2, bc3 = st.columns([1, 1, 1])
+    b_period = bc1.selectbox("Breakout period", list(PERIODS), index=3,
+                             key="bk_period")          # default 52 weeks
+    b_uni = bc2.selectbox("Universe", list_universes(), index=0, key="bk_uni")
+    b_tol = bc3.slider("Within % of high", 0.0, 5.0, 0.0, 0.5, key="bk_tol",
+                       help="0 = must close above the prior high; raise to catch "
+                            "stocks right at the edge") / 100.0
+    if st.button("Scan breakouts", type="primary"):
+        syms = get_universe(b_uni)
+        prog = st.progress(0.0)
+        res, errors = scan_breakouts(
+            syms, period=b_period, tol=b_tol, provider=provider,
+            provider_config=provider_config(cfg, provider),
+            on_progress=lambda d, t, s: prog.progress(d / t, text=s))
+        prog.empty()
+        st.session_state["bk_rows"] = [b.as_row() for b in res]
+    bk_rows = st.session_state.get("bk_rows")
+    if bk_rows is not None:
+        if not bk_rows:
+            st.warning("No stocks at a new high for this period.")
+        else:
+            st.success(f"{len(bk_rows)} stocks breaking out to new "
+                       f"{b_period} highs.")
+            st.dataframe(bk_rows, use_container_width=True, hide_index=True)
+            st.caption("'vs high' +ve = above the prior high · "
+                       "'bars since high' = how long since the prior peak. "
+                       "Confirm trend + volume before acting.")
 
 
 # ---- Ask AI (natural-language screener) ------------------------------------
@@ -721,7 +765,7 @@ if _page == "🔎 Screener":
 
 
 # ---- Backtest --------------------------------------------------------------
-if _page == "📈 Backtest":
+if _page == "📉 Backtest":
     st.subheader("Risk-managed backtest")
     b1, b2, b3 = st.columns(3)
     bsym = b1.text_input("Symbol", value="RELIANCE", key="bt_sym").strip().upper()

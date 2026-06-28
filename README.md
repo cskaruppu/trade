@@ -108,6 +108,10 @@ nsetrade opportunities --universe nifty50 --side short --ai
 # Find stocks forming specific patterns (Cup & Handle, Darvas Box) + their edge
 nsetrade picks --patterns cup_and_handle,darvas_box --universe nifty100
 
+# Stocks breaking out to new highs over a chosen period (momentum screen)
+nsetrade breakouts --period "52 weeks" --universe nifty100
+nsetrade breakouts --period "6 months" --tol 2 --universe nifty100
+
 # Cover the FULL NSE list, and precompute scans overnight for instant loading
 nsetrade refresh-universe                       # download the ~2000-stock NSE list
 nsetrade precompute --universe nse_all          # rank everything into a local cache
