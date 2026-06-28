@@ -28,7 +28,13 @@ from nsetrade.resample import resample_ohlcv, scale_period_days
 from nsetrade.screener import screen
 from nsetrade.signals.engine import signal_for_frame
 from nsetrade.tradeplan import trade_plan
-from nsetrade.universe import UNIVERSES, get_universe, list_universes
+from nsetrade.universe import UNIVERSES, get_universe
+
+try:  # added later; fall back gracefully if nsetrade/ is an older checkout
+    from nsetrade.universe import list_universes
+except ImportError:
+    def list_universes():
+        return list(UNIVERSES)
 
 st.set_page_config(page_title="nsetrade", page_icon="📈", layout="wide")
 cfg = load_config()
