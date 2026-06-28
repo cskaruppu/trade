@@ -157,17 +157,52 @@ _PAGES = [p for group in _NAV_GROUPS.values() for p in group]
 if st.session_state.get("nav_page") not in _PAGES:
     st.session_state["nav_page"] = _PAGES[0]
 st.sidebar.divider()
-st.sidebar.markdown("### Menu")
-# grouped nav: a section header per group, full-width buttons, active highlighted
-for _grp, _items in _NAV_GROUPS.items():
-    st.sidebar.caption(_grp.upper())
-    for _it in _items:
-        _active = st.session_state["nav_page"] == _it
-        if st.sidebar.button(_it, key=f"nav_{_it}", use_container_width=True,
-                             type="primary" if _active else "secondary"):
-            st.session_state["nav_page"] = _it
-            st.rerun()
-_page = st.session_state["nav_page"]
+
+# bootstrap icon per page (used by the polished option_menu when available)
+_ICONS = {
+    "🏠 Home": "house", "🚀 Opportunities": "rocket-takeoff",
+    "🏆 Pattern Picks": "trophy", "📈 Breakouts": "graph-up-arrow",
+    "💬 Ask AI": "chat-dots", "📊 Analyse": "bar-chart-line",
+    "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
+    "🔎 Screener": "search", "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
+}
+
+try:
+    from streamlit_option_menu import option_menu
+    _HAS_OPTION_MENU = True
+except ImportError:
+    _HAS_OPTION_MENU = False
+
+if _HAS_OPTION_MENU:
+    _plain = [p.split(" ", 1)[1] for p in _PAGES]          # strip the emoji
+    with st.sidebar:
+        _sel = option_menu(
+            "Menu", _plain,
+            icons=[_ICONS.get(p, "dot") for p in _PAGES],
+            menu_icon="lightning-charge-fill",
+            default_index=_PAGES.index(st.session_state["nav_page"]),
+            styles={
+                "container": {"background-color": "#11151c", "padding": "4px"},
+                "icon": {"color": "#79c7bd", "font-size": "0.95rem"},
+                "nav-link": {"font-size": "0.92rem", "color": "#cfd8dc",
+                             "--hover-color": "#1b2129"},
+                "nav-link-selected": {"background-color": "#26a69a",
+                                      "color": "#06120f", "font-weight": "600"},
+            })
+    _page = next(p for p in _PAGES if p.split(" ", 1)[1] == _sel)
+    st.session_state["nav_page"] = _page
+else:
+    # fallback: grouped section headers + full-width buttons (no extra dep)
+    st.sidebar.markdown("### Menu")
+    for _grp, _items in _NAV_GROUPS.items():
+        st.sidebar.caption(_grp.upper())
+        for _it in _items:
+            _active = st.session_state["nav_page"] == _it
+            if st.sidebar.button(_it, key=f"nav_{_it}", use_container_width=True,
+                                 type="primary" if _active else "secondary"):
+                st.session_state["nav_page"] = _it
+                st.rerun()
+    _page = st.session_state["nav_page"]
 
 
 # ---- Home -----------------------------------------------------------------
