@@ -108,6 +108,32 @@ def scorecard(signals: list[TrackedSignal]) -> dict:
     }
 
 
+def equity_curve(signals: list[TrackedSignal]) -> list[dict]:
+    """Equal-weight, sequential equity curve from resolved signals.
+
+    Orders resolved signals by resolution date and compounds their returns as
+    if each were one unit of capital taken in turn. Returns points with running
+    ``equity`` (starts at 1.0) and ``drawdown`` (from the running peak). A
+    visualization aid — it assumes non-overlapping equal-size trades.
+    """
+    res = sorted(
+        [s for s in signals if s.status == "resolved" and s.ret is not None
+         and s.resolved_date],
+        key=lambda s: s.resolved_date)
+    eq, peak, pts = 1.0, 1.0, []
+    for s in res:
+        eq *= (1.0 + s.ret)
+        peak = max(peak, eq)
+        pts.append({"date": s.resolved_date, "symbol": s.symbol, "ret": s.ret,
+                    "equity": eq, "drawdown": eq / peak - 1.0})
+    return pts
+
+
+def max_drawdown(curve: list[dict]) -> float:
+    """Worst peak-to-trough drawdown across an equity curve (<= 0)."""
+    return min((p["drawdown"] for p in curve), default=0.0)
+
+
 class TrackRecord:
     def __init__(self, db: Optional[str | Path] = None):
         self.path = Path(db) if db else DEFAULT_DB
@@ -185,6 +211,9 @@ class TrackRecord:
             if on_progress:
                 on_progress(i + 1, len(open_sigs), sig.symbol)
         return resolved
+
+    def equity_curve(self) -> list[dict]:
+        return equity_curve(self.all_signals())
 
     def scorecard(self, *, by: Optional[str] = None) -> dict:
         """Overall scorecard, or a dict of group → scorecard when ``by`` is

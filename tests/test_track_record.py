@@ -99,6 +99,25 @@ def test_log_dedupe_and_evaluate(tmp_path):
     assert sc["n"] == 1 and sc["hit_target_rate"] == 1.0
 
 
+def test_equity_curve_and_max_drawdown():
+    from nsetrade.track_record import equity_curve, max_drawdown
+
+    def rs(ret, date):
+        return TrackedSignal(1, "X", "P", "long", "High", 100, 110, 95,
+                             "2024-01-01", "resolved", "timeout", ret, date)
+    # +10%, -20%, +5%  → compounded
+    sigs = [rs(0.10, "2024-02-01"), rs(-0.20, "2024-03-01"), rs(0.05, "2024-04-01")]
+    curve = equity_curve(sigs)
+    assert len(curve) == 3
+    assert round(curve[0]["equity"], 3) == 1.10
+    assert round(curve[1]["equity"], 3) == round(1.10 * 0.80, 3)   # 0.88
+    # drawdown after the -20% from a peak of 1.10
+    assert round(curve[1]["drawdown"], 3) == round(0.88 / 1.10 - 1, 3)
+    assert max_drawdown(curve) < 0
+    # ordered by resolved_date even if input is shuffled
+    assert [p["ret"] for p in equity_curve(sigs[::-1])] == [0.10, -0.20, 0.05]
+
+
 def test_scorecard_by_pattern(tmp_path):
     rec = TrackRecord(tmp_path / "tr.db")
     rec.log_signal("A", "Cup & Handle", "long", 100, 110, 95, entry_date="2024-01-01")

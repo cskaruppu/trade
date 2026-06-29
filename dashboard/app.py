@@ -144,6 +144,18 @@ def _history(provider, symbol, days, timeframe="daily"):
     return resample_ohlcv(df, timeframe)
 
 
+@st.cache_data(show_spinner=False)
+def _symbol_options():
+    """Searchable 'SYMBOL — Company' options + a label→symbol map."""
+    from nsetrade.universe import symbol_choices
+    options, sym_by = [], {}
+    for s, n in symbol_choices():
+        label = f"{s} — {n}" if n else s
+        options.append(label)
+        sym_by[label] = s
+    return options, sym_by
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
 def _fundamentals(symbol):
     from nsetrade.fundamentals import fetch_fundamentals
@@ -351,8 +363,15 @@ if _page == "🔬 Deep Dive":
                "chart), the confirmed entry / stop / target, its historical edge, "
                "and an AI read — over the full chart history.")
     dd1, dd2, dd3 = st.columns([2, 1, 1])
-    dsym = dd1.text_input("NSE symbol", value="RELIANCE",
-                          key="dd_sym").strip().upper()
+    _opts, _sym_by = _symbol_options()
+    _default = next((i for i, o in enumerate(_opts)
+                     if o.startswith("RELIANCE")), 0)
+    _pick = dd1.selectbox("Search NSE stock (type a symbol or company name)",
+                          _opts, index=_default, key="dd_pick")
+    dsym = _sym_by.get(_pick, _pick).strip().upper()
+    if len(_opts) < 200:
+        dd1.caption("💡 Showing index stocks only — download the full NSE list "
+                    "(sidebar → Full NSE coverage) to search all ~2000.")
     dtf = dd2.radio("Timeframe", ["daily", "weekly", "monthly"],
                     horizontal=True, key="dd_tf")
     dcap = dd3.number_input("Capital (₹)", value=100000, step=10000, key="dd_cap")
@@ -1184,6 +1203,37 @@ if _page == "📋 Track Record":
         st.caption(f"Avg return {sc['avg_return']:+.1%} · "
                    f"avg win {sc['avg_win']:+.1%} · avg loss {sc['avg_loss']:+.1%} "
                    "· every signal counted, wins and losses.")
+
+        # equity curve + drawdown — the most visceral proof
+        from nsetrade.track_record import max_drawdown
+        curve = rec.equity_curve()
+        if len(curve) >= 2:
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            xs = list(range(1, len(curve) + 1))
+            eq = [round((p["equity"] - 1) * 100, 2) for p in curve]   # % gain
+            dd = [round(p["drawdown"] * 100, 2) for p in curve]
+            efig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                 row_heights=[0.7, 0.3], vertical_spacing=0.05,
+                                 subplot_titles=("Equity (equal-weight, %)",
+                                                 "Drawdown (%)"))
+            efig.add_trace(go.Scatter(x=xs, y=eq, mode="lines", name="Equity",
+                                      line=dict(color="#26a69a", width=2),
+                                      fill="tozeroy",
+                                      fillcolor="rgba(38,166,154,0.12)"),
+                           row=1, col=1)
+            efig.add_trace(go.Scatter(x=xs, y=dd, mode="lines", name="Drawdown",
+                                      line=dict(color="#ef5350", width=1.5),
+                                      fill="tozeroy",
+                                      fillcolor="rgba(239,83,80,0.15)"),
+                           row=2, col=1)
+            efig.update_layout(template="plotly_dark", height=380, showlegend=False,
+                               margin=dict(l=10, r=10, t=30, b=10))
+            efig.update_xaxes(title_text="trade #", row=2, col=1)
+            st.plotly_chart(efig, use_container_width=True)
+            st.caption(f"Max drawdown: **{max_drawdown(curve):.0%}** · "
+                       "equal-weight, sequential — if you'd taken every signal "
+                       "in turn. A visualization, not a guaranteed P&L.")
 
         by = rec.scorecard(by="pattern")
         prows = [{"pattern": k, "trades": v["n"],

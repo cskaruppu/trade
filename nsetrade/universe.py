@@ -96,6 +96,40 @@ def refresh_nse_equity_list(dest: Path | None = None,
     return symbols
 
 
+def parse_nse_equity_with_names(text: str) -> list[tuple]:
+    """Like :func:`parse_nse_equity_csv` but returns ``(symbol, company_name)``."""
+    reader = csv.DictReader(io.StringIO(text))
+    out: list[tuple] = []
+    for row in reader:
+        norm = {(k or "").strip().upper(): (v or "").strip()
+                for k, v in row.items()}
+        sym = norm.get("SYMBOL", "")
+        series = norm.get("SERIES", "")
+        name = norm.get("NAME OF COMPANY", "")
+        if sym and (series in ("EQ", "BE") or series == ""):
+            out.append((sym.upper(), name))
+    return out
+
+
+def load_symbol_names() -> dict:
+    """Return ``{symbol: company_name}`` from the cached NSE master, or ``{}``."""
+    path = CACHE_DIR / _FULL_FILES["nse_all"]
+    if not path.exists():
+        return {}
+    return dict(parse_nse_equity_with_names(path.read_text(encoding="utf-8")))
+
+
+def symbol_choices() -> list[tuple]:
+    """All selectable ``(symbol, name)`` pairs for a type-ahead picker.
+
+    Uses the full NSE master if it's been refreshed (names included); always
+    includes the bundled index symbols so the picker works before any download.
+    """
+    names = load_symbol_names()
+    syms = set(names) | set(NIFTY_100)
+    return sorted((s, names.get(s, "")) for s in syms)
+
+
 def load_full_universe(name: str) -> list[str] | None:
     """Return a cached full-exchange list, or ``None`` if not cached yet."""
     fn = _FULL_FILES.get(name.lower())
