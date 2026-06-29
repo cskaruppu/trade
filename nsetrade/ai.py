@@ -137,6 +137,12 @@ def build_prompt(symbol: str, context: dict) -> str:
         lines.append(
             f"Suggested risk frame: entry {plan.get('entry')}, stop {plan.get('stop')}, "
             f"target {plan.get('target')}, R:R {plan.get('rr')}")
+    fund = context.get("fundamentals")
+    if fund:
+        lines.append(f"Fundamentals: {fund}")
+    news = context.get("news")
+    if news:
+        lines.append("Recent headlines: " + " | ".join(news[:4]))
     lines.append("\nWrite the trade thesis now.")
     return "\n".join(lines)
 

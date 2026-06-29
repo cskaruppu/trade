@@ -144,6 +144,28 @@ def _history(provider, symbol, days, timeframe="daily"):
     return resample_ohlcv(df, timeframe)
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def _fundamentals(symbol):
+    from nsetrade.fundamentals import fetch_fundamentals
+    return fetch_fundamentals(symbol)
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def _news(symbol):
+    from nsetrade.fundamentals import fetch_news
+    return fetch_news(symbol)
+
+
+def _debt_color(status: str) -> str:
+    if "Debt-free" in status or "Near" in status:
+        return "#26a69a"
+    if "Low" in status or "Moderate" in status:
+        return "#e3b341"
+    if "High" in status:
+        return "#ef5350"
+    return "#90a4ae"
+
+
 def _get(sig, key, default=float("nan")):
     val = sig.indicators.get(key)
     return val if val is not None else default
@@ -430,6 +452,41 @@ if _page == "🔬 Deep Dive":
                 if tnote:
                     st.success("🎯 " + tnote[0])
 
+            # ---- fundamentals & news (best-effort, via Yahoo) ----
+            st.divider()
+            st.markdown("#### Fundamentals & news")
+            fund = _fundamentals(sym)
+            news = _news(sym)
+            if fund:
+                dc = _debt_color(fund.debt_status)
+                st.markdown(
+                    f"<span class='nt-pill' style='border-color:{dc};color:{dc}'>"
+                    f"{fund.debt_status}</span>", unsafe_allow_html=True)
+                fc = st.columns(4)
+                fc[0].metric("Market cap",
+                             f"₹{fund.market_cap / 1e7:,.0f} Cr" if fund.market_cap
+                             else "—")
+                fc[1].metric("P/E", f"{fund.pe:.1f}" if fund.pe is not None else "—")
+                fc[2].metric("ROE", f"{fund.roe:.0%}" if fund.roe is not None else "—")
+                fc[3].metric("Sector", fund.sector or "—")
+                st.caption(" · ".join(fund.highlights))
+            else:
+                st.caption("Fundamentals unavailable for this symbol (Yahoo returned "
+                           "nothing — common for some NSE stocks).")
+            if news:
+                st.markdown("**Recent headlines**")
+                for nws in news:
+                    pub = nws.get("publisher") or ""
+                    if nws.get("link"):
+                        st.markdown(f"- [{nws['title']}]({nws['link']}) — _{pub}_")
+                    else:
+                        st.markdown(f"- {nws['title']} — _{pub}_")
+            else:
+                st.caption("No recent news found for this symbol.")
+            st.caption("ℹ️ Fundamentals & news come from Yahoo — free but "
+                       "**unofficial**, and may be incomplete or stale. Verify "
+                       "anything important before acting.")
+
             # AI analysis
             st.divider()
             _tcfg_dd = ThesisConfig.from_config(cfg)
@@ -445,6 +502,10 @@ if _page == "🔬 Deep Dive":
                                       for t in ("daily", "weekly", "monthly")}
                             ctx = assemble_context(sym, daily,
                                                    with_confluence_frames=frames)
+                            if fund:
+                                ctx["fundamentals"] = fund.summary()
+                            if news:
+                                ctx["news"] = [n["title"] for n in news]
                             st.markdown(ThesisWriter(_tcfg_dd).write(sym, ctx))
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"AI analysis failed: {exc}")
