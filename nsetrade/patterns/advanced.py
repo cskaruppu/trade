@@ -705,6 +705,78 @@ def detect_vcp(
 
 
 # --------------------------------------------------------------------------
+# Accumulation base — falling resistance over a flat support zone
+# --------------------------------------------------------------------------
+
+
+def detect_accumulation(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 130,
+    zone_tol: float = 0.045,
+    min_low_touches: int = 3,
+    min_drop: float = 0.12,
+) -> PatternMatch:
+    """A prior decline that bases in a flat support *zone* under a descending
+    resistance trendline — the classic "accumulation" setup (e.g. Jio Financial).
+
+    Heuristic: there must be a meaningful prior drop; the recent swing lows must
+    cluster in a tight horizontal band (the accumulation zone, ``min_low_touches``
+    touches); and a line fitted through the swing highs must slope *down*. A
+    breakout fires when price closes above that falling trendline.
+    """
+    name = "Accumulation Base"
+    win = df.tail(lookback)
+    n = len(win)
+    if n < 40:
+        return _na(name, "not enough bars")
+    highs, lows = _swings(win)
+    if len(lows) < min_low_touches or len(highs) < 2:
+        return _na(name)
+    hv, lv = win["high"].values, win["low"].values
+    close = float(win["close"].iloc[-1])
+
+    # a meaningful prior decline (early high well above the later base)
+    early_high = float(hv[: max(n // 3, 1)].max())
+    recent_low = float(lv[2 * n // 3:].min())
+    if early_high <= 0 or (early_high - recent_low) / early_high < min_drop:
+        return _na(name, "no prior decline")
+
+    # support zone = a tight band holding the base lows
+    base = float(np.median(sorted(lv[i] for i in lows)[:max(min_low_touches,
+                                                            len(lows) // 2)]))
+    zone_lo, zone_hi = base * (1 - zone_tol), base * (1 + zone_tol)
+    touches = sum(1 for i in lows if zone_lo <= lv[i] <= zone_hi)
+    if touches < min_low_touches:
+        return _na(name, "no clear support zone")
+
+    # descending resistance: linear fit through swing highs, negative slope
+    hx = np.array(highs, float)
+    hy = np.array([hv[i] for i in highs], float)
+    slope, intercept = np.polyfit(hx, hy, 1)
+    if slope >= 0:
+        return _na(name, "resistance not descending")
+    trend_now = slope * (n - 1) + intercept
+    trend_start = slope * highs[0] + intercept
+    if trend_now <= 0:
+        return _na(name)
+
+    status = "breakout" if close > trend_now else "forming"
+    return PatternMatch(
+        name=name, found=True, direction="bullish", status=status,
+        breakout_level=float(trend_now), support=float(zone_lo),
+        resistance=float(trend_now), start=win.index[0], end=df.index[-1],
+        note=f"support ~{base:.1f} ({touches} touches), falling resistance",
+        overlays=[
+            {"kind": "line",                       # descending resistance trendline
+             "x": _pos_to_dates(win.index, [highs[0], n - 1]),
+             "y": [float(trend_start), float(trend_now)]},
+            {"kind": "band",                       # the accumulation support zone
+             "y0": float(zone_lo), "y1": float(zone_hi)},
+        ])
+
+
+# --------------------------------------------------------------------------
 # Run them all
 # --------------------------------------------------------------------------
 
@@ -718,6 +790,7 @@ ADVANCED_DETECTORS = {
     "head_shoulders": detect_head_shoulders,
     "wedge": detect_wedge,
     "vcp": detect_vcp,
+    "accumulation": detect_accumulation,
 }
 
 ADVANCED_PATTERNS = [
@@ -730,6 +803,7 @@ ADVANCED_PATTERNS = [
     ("head_shoulders", "Head & Shoulders (+inverse)", 0),
     ("wedge", "Wedge (rising/falling)", 0),
     ("vcp", "VCP (Volatility Contraction)", 1),
+    ("accumulation", "Accumulation Base (trendline + support)", 1),
 ]
 
 

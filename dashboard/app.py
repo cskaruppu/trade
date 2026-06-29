@@ -641,6 +641,7 @@ if _page == "🏆 Pattern Picks":
         "Cup & Handle": "cup_and_handle",
         "Darvas Box": "darvas_box",
         "VCP (Volatility Contraction)": "vcp",
+        "Accumulation Base (trendline + support)": "accumulation",
         "Bull Flag": "flag",
         "Double Bottom": "double_bottom",
         "Ascending/Descending Triangle": "triangle",

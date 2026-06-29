@@ -370,4 +370,6 @@ def _pattern_key(name: str) -> Optional[str]:
         return "wedge"
     if "vcp" in n or "volatility contraction" in n:
         return "vcp"
+    if "accumulation" in n:
+        return "accumulation"
     return next((k for k in ADVANCED_DETECTORS if k in n), None)

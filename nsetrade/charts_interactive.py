@@ -104,9 +104,14 @@ def build_figure(
                         row=1, col=1)
                 except Exception:  # noqa: BLE001 - overlay is best-effort
                     pass
-            # draw the pattern's actual shape (cup U-curve, W, neckline, …)
+            # draw the pattern's actual shape (cup U-curve, W, neckline, band…)
             for ov in (getattr(m, "overlays", None) or []):
                 try:
+                    if ov.get("kind") == "band":      # accumulation/support zone
+                        fig.add_hrect(y0=ov["y0"], y1=ov["y1"], line_width=0,
+                                      fillcolor="rgba(66,165,245,0.16)",
+                                      row=1, col=1)
+                        continue
                     fig.add_trace(go.Scatter(
                         x=ov["x"], y=ov["y"], mode="lines",
                         line=dict(color="#e6e9ef", width=2,

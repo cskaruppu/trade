@@ -26,6 +26,29 @@ def test_detectors_registered():
     assert "head_shoulders" in ADVANCED_DETECTORS
     assert "wedge" in ADVANCED_DETECTORS
     assert "vcp" in ADVANCED_DETECTORS
+    assert "accumulation" in ADVANCED_DETECTORS
+
+
+def test_accumulation_base_detected():
+    from nsetrade.patterns.advanced import detect_accumulation
+    rng = np.random.RandomState(1)
+    down = list(np.linspace(300, 228, 55) + rng.randn(55) * 3)
+    base = [234 - i * 0.05 + np.sin(i / 3) * 8 + rng.randn() * 2 for i in range(60)]
+    seg = down + base
+    m = detect_accumulation(frame(seg))
+    assert m.found
+    assert m.direction == "bullish"
+    assert m.breakout_level is not None        # the falling-resistance level
+    assert m.support is not None               # the support zone
+    kinds = [o["kind"] for o in (m.overlays or [])]
+    assert "line" in kinds and "band" in kinds  # trendline + support band
+
+
+def test_accumulation_rejects_uptrend():
+    from nsetrade.patterns.advanced import detect_accumulation
+    # a clean uptrend has no prior decline + flat base → not accumulation
+    m = detect_accumulation(frame(np.linspace(100, 220, 130)))
+    assert not m.found
 
 
 def test_vcp_detected_on_contracting_base():
