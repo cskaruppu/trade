@@ -27,6 +27,7 @@ class Analog:
     end_date: str
     similarity: float        # 0-1 (clamped correlation)
     forward_return: float    # return over `forward` bars after the window
+    end_pos: int = -1        # integer bar index of the window's last bar
 
 
 @dataclass
@@ -50,6 +51,45 @@ class AnalogResult:
 def _zscore(a: np.ndarray) -> np.ndarray:
     s = a.std()
     return (a - a.mean()) / (s if s else 1.0)
+
+
+def aligned_paths(df: pd.DataFrame, result: "AnalogResult") -> list[dict]:
+    """Aligned, rebased price paths for overlaying analogs on one mini-chart.
+
+    Every path is indexed to 100 at ``x = 0`` (the window's last bar), so the
+    shapes overlay regardless of price level. ``x`` runs from ``-(window-1)`` to
+    ``+forward``. The first entry (``kind == "current"``) is today's window and
+    has no forward data; each analog adds its window *and* the forward bars that
+    actually followed it. Use it to literally see "these past shapes matched, and
+    here's where they went."
+    """
+    close = df["close"].to_numpy(dtype=float)
+    n = len(close)
+    w, f = result.window, result.forward
+    paths: list[dict] = []
+
+    def _rebase(seg, x0):
+        base = seg[w - 1]
+        if base <= 0:
+            return None
+        return {"x": np.arange(x0, x0 + len(seg)),
+                "y": seg / base * 100.0}
+
+    cur = _rebase(close[-w:], -(w - 1))
+    if cur:
+        cur.update(kind="current", similarity=1.0, label="now")
+        paths.append(cur)
+
+    for a in result.analogs:
+        i = a.end_pos
+        if i < w - 1 or i + f >= n:
+            continue
+        seg = close[i - w + 1:i + f + 1]
+        p = _rebase(seg, -(w - 1))
+        if p:
+            p.update(kind="analog", similarity=a.similarity, label=a.end_date)
+            paths.append(p)
+    return paths
 
 
 def find_analogs(df: pd.DataFrame, *, window: int = 40, forward: int = 30,
@@ -95,7 +135,8 @@ def find_analogs(df: pd.DataFrame, *, window: int = 40, forward: int = 30,
 
     picked.sort(key=lambda c: c[1], reverse=True)
     analogs = [Analog(str(df.index[i].date()),
-                      max(0.0, min(1.0, sim)), fwd) for i, sim, fwd in picked]
+                      max(0.0, min(1.0, sim)), fwd, end_pos=i)
+               for i, sim, fwd in picked]
     fwds = np.array([a.forward_return for a in analogs])
     return AnalogResult(
         analogs=analogs, window=window, forward=forward, n=len(analogs),

@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from nsetrade.analogs import find_analogs
+from nsetrade.analogs import aligned_paths, find_analogs
 
 
 def frame(close):
@@ -60,3 +60,25 @@ def test_analogs_are_non_overlapping():
                        min_similarity=0.0, top_k=8, min_gap=40)
     dates = [a.end_date for a in res.analogs]
     assert len(dates) == len(set(dates))   # no duplicate episodes
+    assert all(a.end_pos >= 0 for a in res.analogs)
+
+
+def test_aligned_paths_shapes_and_rebasing():
+    rng = np.random.RandomState(3)
+    closes = 100 + np.cumsum(rng.normal(0, 1, 600))
+    res = find_analogs(frame(closes), window=40, forward=30,
+                       min_similarity=0.0, top_k=5, min_gap=40)
+    paths = aligned_paths(frame(closes), res)
+    assert paths and paths[0]["kind"] == "current"
+    # current window: x from -39..0, no forward bars
+    cur = paths[0]
+    assert cur["x"][0] == -39 and cur["x"][-1] == 0
+    assert len(cur["x"]) == 40
+    # every path is rebased to 100 at x == 0 (the window end)
+    for p in paths:
+        zero = list(p["x"]).index(0)
+        assert abs(p["y"][zero] - 100.0) < 1e-6
+    # analog paths carry window + forward bars
+    analog = next(p for p in paths if p["kind"] == "analog")
+    assert analog["x"][0] == -39 and analog["x"][-1] == 30
+    assert len(analog["x"]) == 70

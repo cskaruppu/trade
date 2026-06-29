@@ -519,7 +519,7 @@ if _page == "🔬 Deep Dive":
                        "an honest base rate, not a prediction.")
             _win = {"daily": 40, "weekly": 26, "monthly": 12}[tf]
             _fwd = {"daily": 30, "weekly": 13, "monthly": 6}[tf]
-            from nsetrade.analogs import find_analogs
+            from nsetrade.analogs import aligned_paths, find_analogs
             ares = find_analogs(df, window=_win, forward=_fwd,
                                 top_k=8, min_similarity=0.7)
             if ares.n:
@@ -534,6 +534,44 @@ if _page == "🔬 Deep Dive":
                       f"next {_fwd} bars": f"{a.forward_return:+.1%}"}
                      for a in ares.analogs],
                     use_container_width=True, hide_index=True)
+                # overlay each matched window (+ where it went) on one mini-chart
+                try:
+                    import plotly.graph_objects as go
+                    paths = aligned_paths(df, ares)
+                    ofig = go.Figure()
+                    for p in paths:
+                        is_now = p["kind"] == "current"
+                        ofig.add_trace(go.Scatter(
+                            x=p["x"], y=p["y"], mode="lines",
+                            name=("now" if is_now else
+                                  f"{p['label']} ({p['similarity']:.0%})"),
+                            line=dict(
+                                color="#e6e9ef" if is_now else "#26a69a",
+                                width=3 if is_now else 1.4),
+                            opacity=1.0 if is_now else
+                            max(0.25, min(0.85, p["similarity"]))))
+                    ofig.add_vline(x=0, line=dict(color="#546e7a", width=1,
+                                   dash="dot"))
+                    ofig.add_annotation(x=0, y=1, yref="paper", text=" today ",
+                                        showarrow=False, xanchor="left",
+                                        font=dict(color="#90a4ae", size=10))
+                    ofig.update_layout(
+                        template="plotly_dark", paper_bgcolor="#0e1117",
+                        plot_bgcolor="#0e1117", height=320,
+                        margin=dict(l=40, r=20, t=10, b=30),
+                        legend=dict(orientation="h", y=-0.18, x=0,
+                                    font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
+                        xaxis_title="bars relative to today (0 = now)",
+                        yaxis_title="price (rebased to 100)")
+                    ofig.update_xaxes(gridcolor="#1f2530")
+                    ofig.update_yaxes(gridcolor="#1f2530")
+                    st.plotly_chart(ofig, use_container_width=True,
+                                    config={"displaylogo": False})
+                    st.caption("White = the current shape (left of *today*). Green = "
+                               "past matches, each continued past *today* to show "
+                               "what followed; brighter = more similar.")
+                except Exception:  # noqa: BLE001 - overlay is best-effort
+                    pass
                 _cav = ("⚠️ Only a few analogs — noisy, read as a hint not a base "
                         "rate." if ares.n < 5 else
                         "Distinct, non-overlapping episodes on this stock.")
