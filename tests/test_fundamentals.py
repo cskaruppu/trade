@@ -61,3 +61,36 @@ def test_normalize_news_new_shape():
     assert n["title"] == "Stock surges"
     assert n["link"] == "http://y"
     assert n["publisher"] == "Mint"
+
+
+GOOGLE_RSS = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Google News</title>
+  <item>
+    <title>Reliance shares jump 5% on Q3 beat - Economic Times</title>
+    <link>https://news.google.com/articles/abc</link>
+    <pubDate>Sun, 28 Jun 2026 10:00:00 GMT</pubDate>
+    <source url="https://economictimes.indiatimes.com">Economic Times</source>
+  </item>
+  <item>
+    <title>Reliance to invest in new energy - Moneycontrol</title>
+    <link>https://news.google.com/articles/def</link>
+    <pubDate>Sun, 28 Jun 2026 09:00:00 GMT</pubDate>
+    <source url="https://moneycontrol.com">Moneycontrol</source>
+  </item>
+</channel></rss>"""
+
+
+def test_parse_google_news_rss():
+    items = fnd.parse_google_news_rss(GOOGLE_RSS)
+    assert len(items) == 2
+    assert items[0]["title"].startswith("Reliance shares jump")
+    assert items[0]["publisher"] == "Economic Times"
+    assert items[0]["link"].endswith("/abc")
+    assert items[0]["source"] == "Google"
+
+
+def test_parse_google_news_rss_limit_and_empty():
+    assert fnd.parse_google_news_rss(GOOGLE_RSS, limit=1).__len__() == 1
+    empty = "<?xml version='1.0'?><rss><channel></channel></rss>"
+    assert fnd.parse_google_news_rss(empty) == []

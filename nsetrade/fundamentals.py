@@ -148,6 +148,66 @@ def fetch_news(symbol: str, *, suffix: str = ".NS", limit: int = 6) -> list[dict
         import yfinance
         items = yfinance.Ticker(symbol.upper() + suffix).news or []
         out = [_normalize_news(i) for i in items[:limit]]
-        return [n for n in out if n.get("title")]
+        return [dict(n, source="Yahoo") for n in out if n.get("title")]
     except Exception:  # noqa: BLE001
         return []
+
+
+def parse_google_news_rss(xml_text: str, *, limit: int = 8) -> list[dict]:
+    """Parse a Google News RSS feed into news items. Pure (stdlib only).
+
+    Google News aggregates many publishers (ET, Moneycontrol, Mint, Reuters…),
+    so one feed gives broad coverage. Item titles are usually "Headline - Source".
+    """
+    import xml.etree.ElementTree as ET
+
+    out: list[dict] = []
+    root = ET.fromstring(xml_text)
+    for it in root.findall(".//item")[:limit]:
+        title = (it.findtext("title") or "").strip()
+        if not title:
+            continue
+        out.append({
+            "title": title,
+            "link": (it.findtext("link") or "").strip(),
+            "publisher": (it.findtext("source") or "Google News").strip(),
+            "time": (it.findtext("pubDate") or "").strip(),
+            "source": "Google",
+        })
+    return out
+
+
+def fetch_google_news(query: str, *, limit: int = 8) -> list[dict]:
+    """Fetch recent India-focused news for ``query`` from Google News RSS."""
+    import urllib.parse
+    import urllib.request
+
+    try:
+        q = urllib.parse.quote(query)
+        url = (f"https://news.google.com/rss/search?q={q}"
+               f"&hl=en-IN&gl=IN&ceid=IN:en")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+            xml_text = resp.read().decode("utf-8", "replace")
+        return parse_google_news_rss(xml_text, limit=limit)
+    except Exception:  # noqa: BLE001 - best-effort
+        return []
+
+
+def fetch_all_news(symbol: str, *, name: Optional[str] = None,
+                   suffix: str = ".NS", limit: int = 8) -> list[dict]:
+    """Combine Yahoo + Google News, de-duplicated by headline.
+
+    ``name`` (the company name) makes the Google query far more relevant than the
+    bare ticker — pass ``Fundamentals.name`` when available.
+    """
+    query = f"{name} share price NSE" if name else f"{symbol} stock NSE"
+    combined = fetch_google_news(query, limit=limit) + fetch_news(
+        symbol, suffix=suffix, limit=limit)
+    seen, out = set(), []
+    for n in combined:
+        key = (n.get("title") or "")[:50].lower()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(n)
+    return out[:limit]

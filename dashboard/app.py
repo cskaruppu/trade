@@ -151,9 +151,9 @@ def _fundamentals(symbol):
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def _news(symbol):
-    from nsetrade.fundamentals import fetch_news
-    return fetch_news(symbol)
+def _news(symbol, name=None):
+    from nsetrade.fundamentals import fetch_all_news
+    return fetch_all_news(symbol, name=name, limit=8)
 
 
 def _debt_color(status: str) -> str:
@@ -456,7 +456,7 @@ if _page == "🔬 Deep Dive":
             st.divider()
             st.markdown("#### Fundamentals & news")
             fund = _fundamentals(sym)
-            news = _news(sym)
+            news = _news(sym, fund.name if fund else None)
             if fund:
                 dc = _debt_color(fund.debt_status)
                 st.markdown(
@@ -474,18 +474,20 @@ if _page == "🔬 Deep Dive":
                 st.caption("Fundamentals unavailable for this symbol (Yahoo returned "
                            "nothing — common for some NSE stocks).")
             if news:
-                st.markdown("**Recent headlines**")
+                st.markdown("**Recent headlines** (Google News + Yahoo)")
                 for nws in news:
                     pub = nws.get("publisher") or ""
+                    src = nws.get("source") or ""
+                    tag = f"_{pub}_ · {src}" if pub else src
                     if nws.get("link"):
-                        st.markdown(f"- [{nws['title']}]({nws['link']}) — _{pub}_")
+                        st.markdown(f"- [{nws['title']}]({nws['link']}) — {tag}")
                     else:
-                        st.markdown(f"- {nws['title']} — _{pub}_")
+                        st.markdown(f"- {nws['title']} — {tag}")
             else:
                 st.caption("No recent news found for this symbol.")
-            st.caption("ℹ️ Fundamentals & news come from Yahoo — free but "
-                       "**unofficial**, and may be incomplete or stale. Verify "
-                       "anything important before acting.")
+            st.caption("ℹ️ News aggregated from Google News (many publishers) + "
+                       "Yahoo. Fundamentals from Yahoo — free but **unofficial** "
+                       "and may be incomplete or stale. Verify before acting.")
 
             # AI analysis
             st.divider()
