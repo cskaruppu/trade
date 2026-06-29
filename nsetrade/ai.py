@@ -16,6 +16,7 @@ config.yaml or the ``ANTHROPIC_API_KEY`` environment variable).
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -176,6 +177,37 @@ class ThesisWriter:
     def summarize_opportunities(self, opportunities, side: str = "long") -> str:
         """Give a portfolio-level read over a ranked opportunity list."""
         return self._send(_OPP_SYSTEM, build_opportunities_prompt(opportunities, side))
+
+    def classify_headlines(self, headlines: list[str]) -> list[str]:
+        """Tag each headline's sentiment for the stock (one batched call).
+
+        Returns a list of 'positive'/'negative'/'neutral' aligned to the input
+        order (padded with 'neutral' if the model returns fewer).
+        """
+        if not headlines:
+            return []
+        prompt = ("Classify each headline's sentiment FOR THE STOCK "
+                  "(positive / negative / neutral). Return the sentiments in the "
+                  "SAME ORDER as the headlines.\n\n"
+                  + "\n".join(f"{i + 1}. {h}" for i, h in enumerate(headlines)))
+        resp = self._client.messages.create(
+            model=self.config.model, max_tokens=600,
+            system=("You label financial-news sentiment for a specific stock. "
+                    "Positive = likely good for the share price; negative = likely "
+                    "bad; neutral = mixed/no clear impact."),
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"format": {"type": "json_schema", "schema": {
+                "type": "object",
+                "properties": {"sentiments": {"type": "array", "items": {
+                    "type": "string",
+                    "enum": ["positive", "negative", "neutral"]}}},
+                "required": ["sentiments"], "additionalProperties": False}}})
+        text = next((b.text for b in resp.content
+                     if getattr(b, "type", None) == "text"), "{}")
+        sents = [str(s).lower() for s in json.loads(text).get("sentiments", [])]
+        sents = [s if s in ("positive", "negative", "neutral") else "neutral"
+                 for s in sents]
+        return (sents + ["neutral"] * len(headlines))[:len(headlines)]
 
     def read_chart(self, image_png: bytes, symbol: str,
                    context: Optional[dict] = None) -> str:

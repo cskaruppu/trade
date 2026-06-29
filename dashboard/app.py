@@ -380,6 +380,7 @@ if _page == "🔬 Deep Dive":
                     break
             if best is None and matches:
                 best = matches[0]
+            conf = edge_row = None      # set below when a pattern is found
 
             # headline: what pattern + verdict
             if best:
@@ -473,16 +474,36 @@ if _page == "🔬 Deep Dive":
             else:
                 st.caption("Fundamentals unavailable for this symbol (Yahoo returned "
                            "nothing — common for some NSE stocks).")
+            sent = st.session_state.get("dd_sent", {}).get(sym)
             if news:
                 st.markdown("**Recent headlines** (Google News + Yahoo)")
-                for nws in news:
+                _dots = {"positive": "🟢", "negative": "🔴", "neutral": "⚪"}
+                for i, nws in enumerate(news):
+                    dot = _dots.get(sent[i] if sent and i < len(sent) else None, "")
                     pub = nws.get("publisher") or ""
                     src = nws.get("source") or ""
                     tag = f"_{pub}_ · {src}" if pub else src
-                    if nws.get("link"):
-                        st.markdown(f"- [{nws['title']}]({nws['link']}) — {tag}")
-                    else:
-                        st.markdown(f"- {nws['title']} — {tag}")
+                    title = (f"[{nws['title']}]({nws['link']})" if nws.get("link")
+                             else nws["title"])
+                    st.markdown(f"- {dot} {title} — {tag}")
+                _tcn = ThesisConfig.from_config(cfg)
+                if sent:
+                    pos, neg = sent.count("positive"), sent.count("negative")
+                    mood = ("🟢 net positive" if pos > neg else
+                            "🔴 net negative" if neg > pos else "⚪ mixed")
+                    st.caption(f"News mood: **{mood}** "
+                               f"({pos} positive / {neg} negative / "
+                               f"{sent.count('neutral')} neutral)")
+                elif _tcn.enabled and st.button("🧠 Tag news sentiment (AI)",
+                                                key="dd_sent_btn"):
+                    with st.spinner("Claude is reading the headlines…"):
+                        try:
+                            s = ThesisWriter(_tcn).classify_headlines(
+                                [n["title"] for n in news])
+                            st.session_state.setdefault("dd_sent", {})[sym] = s
+                            st.rerun()
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"sentiment tagging failed: {exc}")
             else:
                 st.caption("No recent news found for this symbol.")
             st.caption("ℹ️ News aggregated from Google News (many publishers) + "
@@ -508,7 +529,9 @@ if _page == "🔬 Deep Dive":
                                 ctx["fundamentals"] = fund.summary()
                             if news:
                                 ctx["news"] = [n["title"] for n in news]
-                            st.markdown(ThesisWriter(_tcfg_dd).write(sym, ctx))
+                            _thesis = ThesisWriter(_tcfg_dd).write(sym, ctx)
+                            st.session_state.setdefault("dd_thesis", {})[sym] = _thesis
+                            st.markdown(_thesis)
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"AI analysis failed: {exc}")
                 if dac2.button("👁 AI chart read (vision)", key="dd_vis"):
@@ -520,6 +543,37 @@ if _page == "🔬 Deep Dive":
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"chart read failed: {exc}")
             st.caption("AI is educational analysis, not investment advice.")
+
+            # ---- export the report ----
+            st.divider()
+            from nsetrade.report import build_report_md
+            _news_rep = [{"title": n.get("title"), "publisher": n.get("publisher"),
+                          "sentiment": sent[i] if sent and i < len(sent) else None}
+                         for i, n in enumerate(news or [])]
+            md = build_report_md(
+                sym, tf,
+                pattern=best.name if best else None,
+                confidence=conf, edge=edge_row["edge"] if edge_row else None,
+                entry=f"{plan.entry:.2f}" if plan else None,
+                stop=f"{plan.stop:.2f}" if plan else None,
+                target=f"{plan.target:.2f}" if plan else None,
+                rr=f"{plan.rr:.1f}:1" if plan else None,
+                size=plan.shares if plan else None,
+                debt_status=fund.debt_status if fund else None,
+                highlights=fund.highlights if fund else None,
+                news=_news_rep,
+                thesis=st.session_state.get("dd_thesis", {}).get(sym))
+            ec1, ec2 = st.columns(2)
+            ec1.download_button("⬇ Download report (Markdown)", md,
+                                file_name=f"{sym}_edgeforge_report.md",
+                                mime="text/markdown")
+            try:
+                from nsetrade.charts import render_chart_bytes
+                _png = render_chart_bytes(f"{sym} ({tf})", df, bars=220)
+                ec2.download_button("⬇ Download chart (PNG)", _png,
+                                    file_name=f"{sym}_chart.png", mime="image/png")
+            except Exception:  # noqa: BLE001
+                pass
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not analyse {sym}: {exc}")
 
