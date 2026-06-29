@@ -173,9 +173,17 @@ def build_figure(
     fig.add_trace(go.Bar(x=x, y=view["volume"], marker_color=vol_colors,
                          name="Volume", showlegend=False), row=2, col=1)
 
-    # ---- RSI ----
+    # ---- RSI ----  (the "14" in the title is the period; the value is the line)
     fig.add_trace(go.Scatter(x=x, y=view["rsi_14"], line=dict(color="#ce93d8"),
                              name="RSI", showlegend=False), row=3, col=1)
+    if view["rsi_14"].notna().any():
+        _last_rsi = float(view["rsi_14"].dropna().iloc[-1])
+        _rcol = ("#ef5350" if _last_rsi >= 70 else
+                 "#26a69a" if _last_rsi <= 30 else "#ce93d8")
+        fig.add_annotation(
+            x=x[-1], y=_last_rsi, text=f" {_last_rsi:.0f}", row=3, col=1,
+            showarrow=False, xanchor="left", font=dict(color=_rcol, size=11),
+            bgcolor="rgba(17,21,28,0.85)")
     fig.add_hline(y=70, line=dict(color=_DOWN, width=0.6, dash="dot"), row=3, col=1)
     fig.add_hline(y=30, line=dict(color=_UP, width=0.6, dash="dot"), row=3, col=1)
 
