@@ -232,7 +232,8 @@ _k4.metric("Last cached scan", _last_scan_label())
 _NAV_GROUPS = {
     "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks",
                  "📈 Breakouts", "💬 Ask AI"],
-    "Analyse": ["📊 Analyse", "🎯 Confluence", "🧪 Pattern Edge", "🔎 Screener"],
+    "Analyse": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence",
+                "🧪 Pattern Edge", "🔎 Screener"],
     "Manage": ["⭐ Watchlist", "📉 Backtest"],
 }
 _PAGES = [p for group in _NAV_GROUPS.values() for p in group]
@@ -244,7 +245,8 @@ st.sidebar.divider()
 _ICONS = {
     "🏠 Home": "house", "🚀 Opportunities": "rocket-takeoff",
     "🏆 Pattern Picks": "trophy", "📈 Breakouts": "graph-up-arrow",
-    "💬 Ask AI": "chat-dots", "📊 Analyse": "bar-chart-line",
+    "💬 Ask AI": "chat-dots", "🔬 Deep Dive": "search-heart",
+    "📊 Analyse": "bar-chart-line",
     "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
     "🔎 Screener": "search", "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
 }
@@ -317,6 +319,146 @@ if _page == "🏠 Home":
     st.divider()
     st.caption("EdgeForge · evidence-based, AI-native, private. "
                "Educational only — not investment advice.")
+
+
+# ---- Deep Dive (single-stock full report) ----------------------------------
+if _page == "🔬 Deep Dive":
+    st.subheader("🔬 Single-stock deep dive")
+    st.caption("One stock, full report: which pattern it's forming (drawn on the "
+               "chart), the confirmed entry / stop / target, its historical edge, "
+               "and an AI read — over the full chart history.")
+    dd1, dd2, dd3 = st.columns([2, 1, 1])
+    dsym = dd1.text_input("NSE symbol", value="RELIANCE",
+                          key="dd_sym").strip().upper()
+    dtf = dd2.radio("Timeframe", ["daily", "weekly", "monthly"],
+                    horizontal=True, key="dd_tf")
+    dcap = dd3.number_input("Capital (₹)", value=100000, step=10000, key="dd_cap")
+
+    if dsym and st.button("Analyse stock", type="primary", key="dd_go"):
+        st.session_state["dd_run"] = {"sym": dsym, "tf": dtf, "cap": float(dcap)}
+
+    run = st.session_state.get("dd_run")
+    if run:
+        from nsetrade.ai import _pattern_key
+        from nsetrade.edge import pattern_edge_validated
+        from nsetrade.patterns import detect_advanced
+        from nsetrade.tradeplan import trade_plan
+        sym, tf, cap = run["sym"], run["tf"], run["cap"]
+        try:
+            tf_days = {"daily": 700, "weekly": 1800, "monthly": 4000}[tf]
+            daily = _daily(provider, sym, tf_days)
+            df = resample_ohlcv(daily, tf)
+            sig = signal_for_frame(sym, df)
+            matches = detect_advanced(df)
+            # pick the primary pattern: a bullish breakout if present, else strongest
+            best = None
+            for m in matches:
+                if m.direction == "bullish" and m.status == "breakout":
+                    best = m
+                    break
+            if best is None and matches:
+                best = matches[0]
+
+            # headline: what pattern + verdict
+            if best:
+                key = _pattern_key(best.name)
+                ve = pattern_edge_validated(df, key) if key else None
+                edge_row = {
+                    "pattern": best.name,
+                    "edge": (f"{ve.full.win_rate:.0%} / {ve.full.occurrences}"
+                             if ve and ve.full.occurrences else "-"),
+                    "robust": ("✓" if ve and ve.robust else
+                               "✗" if ve else "-"),
+                    "vol": "✓" if best.volume_confirmed else "-",
+                }
+                conf, color = _pattern_confidence(edge_row)
+                st.markdown(
+                    f"### {sym} — **{best.name}** "
+                    f"<span class='nt-pill' style='border-color:{color};color:{color}'>"
+                    f"{conf}</span>", unsafe_allow_html=True)
+                st.caption(f"Status: **{best.status}** · direction: {best.direction} "
+                           f"· edge {edge_row['edge']} · robust {edge_row['robust']} "
+                           f"· volume {edge_row['vol']} · signal: {sig.verdict}")
+            else:
+                st.markdown(f"### {sym} — no clear structural pattern")
+                st.caption(f"Signal: {sig.verdict} (score {sig.score:+.2f}). "
+                           "Showing trend + levels instead.")
+
+            # chart: only the primary pattern drawn + its target/entry
+            only = {_pattern_key(best.name)} if best else None
+            fig, notes = build_figure(f"{sym} · {tf}", df, bars=300,
+                                      show_patterns=True, show_fib=False,
+                                      only_keys=only)
+
+            # trade plan → entry / stop / target, drawn on the chart
+            direction = "long" if (best.direction == "bullish" if best
+                                   else sig.score >= 0) else "short"
+            plan = None
+            try:
+                plan = trade_plan(sym, df, direction=direction, capital=cap,
+                                  risk_pct=0.01, pattern=best)
+                fig.add_hline(y=plan.entry, line=dict(color="#42a5f5", width=1.2,
+                              dash="dash"), row=1, col=1,
+                              annotation_text=f"Entry {plan.entry:.1f}",
+                              annotation_position="bottom left",
+                              annotation_font_color="#42a5f5")
+                fig.add_hline(y=plan.stop, line=dict(color="#ef5350", width=1.2,
+                              dash="dash"), row=1, col=1,
+                              annotation_text=f"Stop {plan.stop:.1f}",
+                              annotation_position="bottom left",
+                              annotation_font_color="#ef5350")
+            except Exception:  # noqa: BLE001
+                pass
+
+            st.plotly_chart(fig, use_container_width=True,
+                            config={"scrollZoom": True, "displaylogo": False})
+
+            # explicit trade levels
+            if plan:
+                st.markdown("#### Trade plan")
+                t1, t2, t3, t4, t5 = st.columns(5)
+                t1.metric("Entry", f"₹{plan.entry:,.2f}")
+                t2.metric("Stop loss", f"₹{plan.stop:,.2f}")
+                t3.metric("Target", f"₹{plan.target:,.2f}")
+                t4.metric("Reward:Risk", f"{plan.rr:.1f} : 1")
+                t5.metric("Size (1% risk)", f"{plan.shares:,}")
+                st.caption("Entry = pattern breakout · Stop = below structure/ATR · "
+                           "Target = measured move. Size risks 1% of capital. "
+                           "Educational — confirm before trading.")
+            if notes:
+                tnote = [n for n in notes if "Upside potential" in n]
+                if tnote:
+                    st.success("🎯 " + tnote[0])
+
+            # AI analysis
+            st.divider()
+            _tcfg_dd = ThesisConfig.from_config(cfg)
+            if not _tcfg_dd.enabled:
+                st.caption("💡 Add an Anthropic API key for a full AI read "
+                           "(text thesis + a vision read of this chart).")
+            else:
+                dac1, dac2 = st.columns(2)
+                if dac1.button("🤖 AI analysis & thesis", key="dd_ai"):
+                    with st.spinner(f"Claude ({_tcfg_dd.model}) is analysing {sym}…"):
+                        try:
+                            frames = {t: resample_ohlcv(daily, t)
+                                      for t in ("daily", "weekly", "monthly")}
+                            ctx = assemble_context(sym, daily,
+                                                   with_confluence_frames=frames)
+                            st.markdown(ThesisWriter(_tcfg_dd).write(sym, ctx))
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"AI analysis failed: {exc}")
+                if dac2.button("👁 AI chart read (vision)", key="dd_vis"):
+                    with st.spinner(f"Claude is reading {sym}'s chart…"):
+                        try:
+                            from nsetrade.charts import render_chart_bytes
+                            png = render_chart_bytes(f"{sym} ({tf})", df, bars=220)
+                            st.markdown(ThesisWriter(_tcfg_dd).read_chart(png, sym))
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"chart read failed: {exc}")
+            st.caption("AI is educational analysis, not investment advice.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not analyse {sym}: {exc}")
 
 
 # ---- Pattern Picks (focused pattern screener) ------------------------------
