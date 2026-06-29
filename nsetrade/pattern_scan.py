@@ -30,6 +30,8 @@ class PatternHit:
     edge_occurrences: Optional[int] = None
     edge_robust: Optional[bool] = None
     volume_confirmed: Optional[bool] = None
+    target: Optional[float] = None        # measured-move target
+    upside_pct: Optional[float] = None     # implied % move from current close
     note: str = ""
 
     def as_row(self) -> dict:
@@ -41,6 +43,9 @@ class PatternHit:
                     ("✗" if self.volume_confirmed is False else "-")),
             "close": round(self.close, 2),
             "breakout": round(self.breakout_level, 2) if self.breakout_level else None,
+            "target": round(self.target, 2) if self.target else None,
+            "upside %": round(self.upside_pct * 100, 1)
+            if self.upside_pct is not None else None,
             "edge": (f"{self.edge_win_rate:.0%} / {self.edge_occurrences}"
                      if self.edge_win_rate is not None else "-"),
             "robust": ("✓" if self.edge_robust else
@@ -88,10 +93,17 @@ def scan_for_patterns(
                     continue
                 if only_volume_confirmed and not m.volume_confirmed:
                     continue
+                # measured-move target (breakout + the base's own height) and
+                # the % upside it implies from the current price
+                target = upside = None
+                if (m.breakout_level and m.support
+                        and m.breakout_level > m.support and close > 0):
+                    target = m.breakout_level + (m.breakout_level - m.support)
+                    upside = target / close - 1.0
                 hit = PatternHit(symbol=sym, pattern=m.name, direction=m.direction,
                                  status=m.status, breakout_level=m.breakout_level,
                                  close=close, volume_confirmed=m.volume_confirmed,
-                                 note=m.note)
+                                 target=target, upside_pct=upside, note=m.note)
                 if with_edge:
                     try:
                         from .edge import pattern_edge_validated

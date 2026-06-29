@@ -77,6 +77,23 @@ def test_as_row_shape(monkeypatch):
     assert row["edge"] == "-"        # edge disabled
 
 
+def test_measured_move_target_and_upside(monkeypatch):
+    # breakout at 110, support 90 → target 130, close 100 → +30% upside
+    fake = [PatternMatch(name="Cup & Handle", found=True, direction="bullish",
+                         status="breakout", breakout_level=110.0, support=90.0)]
+    monkeypatch.setattr("nsetrade.patterns.detect_advanced", lambda df: fake)
+    f = frame(np.full(200, 100.0))     # close = 100
+    prov = _FakeProvider({"AAA": f})
+    hits, _ = pattern_scan.scan_for_patterns(["AAA"], ["cup_and_handle"],
+                                             with_edge=False, _provider_obj=prov)
+    h = hits[0]
+    assert h.target == 130.0                       # 110 + (110 - 90)
+    assert round(h.upside_pct, 2) == 0.30          # (130/100 - 1)
+    row = h.as_row()
+    assert row["target"] == 130.0
+    assert row["upside %"] == 30.0
+
+
 def test_only_volume_confirmed_filter(monkeypatch):
     fake = [
         PatternMatch(name="Cup & Handle", found=True, direction="bullish",

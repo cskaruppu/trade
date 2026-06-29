@@ -711,14 +711,22 @@ if _page == "🏆 Pattern Picks":
             rows = [r for r in hits_rows
                     if _pattern_key(r.get("pattern", "")) in _sel_keys]
 
-            # ---- search + filter the results ----
-            fc1, fc2, fc3 = st.columns([2, 2, 2])
+            # ---- one-click high-conviction big-move filter ----
+            hc = st.checkbox(
+                "🎯 High-conviction big-move setups only", value=False, key="pp_hc",
+                help="confirmed breakout + volume + a robust historical edge "
+                     "(High confidence) + an implied move of at least the % below")
+            fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 2])
             _q = fc1.text_input("🔍 Search symbol", key="pp_q").strip().upper()
             _conf_pick = fc2.multiselect("Confidence",
                                          ["High", "Moderate", "Low/Unproven"],
-                                         default=[], key="pp_conf")
+                                         default=(["High"] if hc else []),
+                                         key="pp_conf")
             _status_pick = fc3.multiselect("Status", ["breakout", "forming"],
-                                           default=[], key="pp_status")
+                                           default=(["breakout"] if hc else []),
+                                           key="pp_status")
+            _min_up = fc4.slider("Min implied upside %", 0, 100,
+                                 30 if hc else 0, 5, key="pp_minup")
 
             def _tier(r):
                 lab = _pattern_confidence(r)[0]
@@ -732,9 +740,19 @@ if _page == "🏆 Pattern Picks":
                 rows = [r for r in rows if _tier(r) in _conf_pick]
             if _status_pick:
                 rows = [r for r in rows if r.get("status") in _status_pick]
+            if _min_up > 0:
+                rows = [r for r in rows
+                        if r.get("upside %") is not None
+                        and r["upside %"] >= _min_up]
+            if hc:                       # require volume confirmation too
+                rows = [r for r in rows if r.get("vol") == "✓"]
+
+            # sort the filtered view: biggest implied move first within the filter
+            rows = sorted(rows, key=lambda r: (r.get("upside %") or 0), reverse=True)
 
             st.caption(f"Showing **{len(rows)}** of {len(hits_rows)} rows · "
-                       f"patterns: {', '.join(chosen) or 'none selected'}")
+                       f"patterns: {', '.join(chosen) or 'none selected'}"
+                       + (" · 🎯 high-conviction big-move filter ON" if hc else ""))
 
             if not rows:
                 st.info("No rows match. Loosen the filters — or if you selected a "
