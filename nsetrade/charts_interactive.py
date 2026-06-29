@@ -32,6 +32,7 @@ def build_figure(
     bars: int = 200,
     show_patterns: bool = True,
     show_fib: bool = False,
+    show_trendlines: bool = False,
     only_keys=None,
 ):
     """Return a Plotly Figure for ``df`` (last ``bars`` rows).
@@ -154,6 +155,22 @@ def build_figure(
                         f"Upside potential: {entry:.1f} → {target:.1f} (+{pct:.0%})")
                 except Exception:  # noqa: BLE001 - target is best-effort
                     pass
+
+    # ---- support / resistance trendlines ----
+    if show_trendlines:
+        try:
+            from .trendlines import fit_trendlines
+            tl = fit_trendlines(view)
+            for kind, color in (("resistance", "#ef9a9a"), ("support", "#80cbc4")):
+                ln = tl.get(kind)
+                if ln:
+                    fig.add_trace(go.Scatter(
+                        x=ln["x"], y=ln["y"], mode="lines",
+                        line=dict(color=color, width=1.5, dash="dot"),
+                        name=kind, showlegend=False, hoverinfo="skip"),
+                        row=1, col=1)
+        except Exception:  # noqa: BLE001 - overlay is best-effort
+            pass
 
     # ---- Fibonacci retracement overlay ----
     if show_fib:

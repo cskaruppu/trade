@@ -455,14 +455,18 @@ if _page == "🔬 Deep Dive":
 
             # ---- history depth control + chart (only the primary pattern drawn) ----
             _per_year = {"daily": 252, "weekly": 52, "monthly": 12}[tf]
-            hsel = st.select_slider(
+            _hc1, _hc2 = st.columns([3, 2])
+            hsel = _hc1.select_slider(
                 "Chart history", options=["1Y", "3Y", "5Y", "10Y", "Max"],
                 value="3Y", key="dd_hist")
+            dd_tl = _hc2.checkbox("Trendlines", value=False, key="dd_tl",
+                                  help="support/resistance lines through swings")
             _bars = (len(df) if hsel == "Max"
                      else {"1Y": 1, "3Y": 3, "5Y": 5, "10Y": 10}[hsel] * _per_year)
             _bars = max(60, min(_bars, len(df)))
             only = {_pattern_key(best.name)} if best else None
             fig, notes = build_figure(f"{sym} · {tf}", df, bars=_bars,
+                                      show_trendlines=dd_tl,
                                       show_patterns=True, show_fib=False,
                                       only_keys=only)
 
@@ -1089,12 +1093,17 @@ if _page == "📊 Analyse":
             m4.metric("ADX(14)", f"{_get(sig, 'adx'):.1f}")
             m5.metric("ATR(14)", f"{_get(sig, 'atr_14'):.2f}")
 
-            show_fib = st.checkbox("Overlay Fibonacci retracement", value=False,
-                                   key="an_fib",
-                                   help="auto-drawn on the dominant swing — "
-                                        "industry-standard 23.6/38.2/50/61.8/78.6% levels")
+            _oc1, _oc2 = st.columns(2)
+            show_fib = _oc1.checkbox("Overlay Fibonacci retracement", value=False,
+                                     key="an_fib",
+                                     help="auto-drawn on the dominant swing — "
+                                          "23.6/38.2/50/61.8/78.6% levels")
+            show_tl = _oc2.checkbox("Overlay trendlines (support/resistance)",
+                                    value=False, key="an_tl",
+                                    help="fits lines through recent swing highs "
+                                         "and lows — the up/down channel")
             fig, notes = build_figure(f"{symbol} · {timeframe}", df, bars=220,
-                                      show_fib=show_fib)
+                                      show_fib=show_fib, show_trendlines=show_tl)
             _badge = _best_pattern_badge(symbol, days, timeframe)
             if _badge:
                 _btext, _bcolor = _badge
