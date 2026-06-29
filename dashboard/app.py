@@ -510,6 +510,38 @@ if _page == "🔬 Deep Dive":
                 if tnote:
                     st.success("🎯 " + tnote[0])
 
+            # ---- similar historical setups (chart analogs) ----
+            st.divider()
+            st.markdown("#### 🔁 Similar historical setups")
+            st.caption("When this stock looked like it does *now* over its own "
+                       "history, what happened next? Each analog is a distinct "
+                       "past episode whose shape matched today's — the average is "
+                       "an honest base rate, not a prediction.")
+            _win = {"daily": 40, "weekly": 26, "monthly": 12}[tf]
+            _fwd = {"daily": 30, "weekly": 13, "monthly": 6}[tf]
+            from nsetrade.analogs import find_analogs
+            ares = find_analogs(df, window=_win, forward=_fwd,
+                                top_k=8, min_similarity=0.7)
+            if ares.n:
+                ag1, ag2, ag3 = st.columns(3)
+                ag1.metric(f"Avg next {_fwd} bars", f"{ares.avg_forward:+.1%}")
+                ag2.metric("Positive", f"{ares.win_rate:.0%}",
+                           help="share of analogs that rose over the forward window")
+                ag3.metric("Analogs found", ares.n)
+                st.dataframe(
+                    [{"matched (window end)": a.end_date,
+                      "similarity": f"{a.similarity:.0%}",
+                      f"next {_fwd} bars": f"{a.forward_return:+.1%}"}
+                     for a in ares.analogs],
+                    use_container_width=True, hide_index=True)
+                _cav = ("⚠️ Only a few analogs — noisy, read as a hint not a base "
+                        "rate." if ares.n < 5 else
+                        "Distinct, non-overlapping episodes on this stock.")
+                st.caption(f"{ares.describe()}. {_cav} Past shape ≠ future outcome.")
+            else:
+                st.caption(f"ℹ️ {ares.note} — need more history, or no past shape "
+                           "closely matched today's.")
+
             # ---- fundamentals & news (best-effort, via Yahoo) ----
             st.divider()
             st.markdown("#### Fundamentals & news")
