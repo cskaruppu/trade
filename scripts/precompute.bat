@@ -21,4 +21,9 @@ call .venv\Scripts\activate.bat
 echo [nsetrade] Precomputing opportunities + pattern picks for nifty100...
 nsetrade precompute --universe nifty100 --side long --with-patterns
 
-echo [nsetrade] Done. Open the dashboard and tick "use cached scan".
+echo [nsetrade] Updating the track record (log new breakouts, resolve matured)...
+nsetrade track evaluate
+nsetrade track log --universe nifty100
+
+echo [nsetrade] Done. Open the dashboard - cached scans load instantly, and the
+echo            Track Record page fills in as signals mature.

@@ -256,7 +256,7 @@ _NAV_GROUPS = {
                  "📈 Breakouts", "💬 Ask AI"],
     "Analyse": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence",
                 "🧪 Pattern Edge", "🔎 Screener"],
-    "Manage": ["⭐ Watchlist", "📉 Backtest"],
+    "Manage": ["📋 Track Record", "⭐ Watchlist", "📉 Backtest"],
 }
 _PAGES = [p for group in _NAV_GROUPS.values() for p in group]
 if st.session_state.get("nav_page") not in _PAGES:
@@ -270,7 +270,8 @@ _ICONS = {
     "💬 Ask AI": "chat-dots", "🔬 Deep Dive": "search-heart",
     "📊 Analyse": "bar-chart-line",
     "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
-    "🔎 Screener": "search", "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
+    "🔎 Screener": "search", "📋 Track Record": "clipboard-check",
+    "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
 }
 
 try:
@@ -1120,6 +1121,94 @@ if _page == "📊 Analyse":
                         st.error(f"thesis failed: {exc}")
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not analyse {symbol}: {exc}")
+
+
+# ---- Track Record ----------------------------------------------------------
+if _page == "📋 Track Record":
+    from nsetrade.track_record import TrackRecord
+    st.subheader("📋 Signal track record")
+    st.caption("Honest proof, over time: every logged signal is measured against "
+               "what price actually did — wins **and** losses. This is the "
+               "scorecard, not a sales pitch.")
+    rec = TrackRecord()
+
+    tc1, tc2, tc3 = st.columns([2, 1, 1])
+    tr_uni = tc1.selectbox("Universe to log from", list_universes(), index=0,
+                           key="tr_uni")
+    if tc2.button("➕ Log current breakouts"):
+        from nsetrade.pattern_scan import scan_for_patterns
+        syms = get_universe(tr_uni)
+        prog = st.progress(0.0)
+        hits, _ = scan_for_patterns(
+            syms, provider=provider, provider_config=provider_config(cfg, provider),
+            only_breakouts=True,
+            on_progress=lambda d, t, s: prog.progress(d / t, text=s))
+        prog.empty()
+        logged = 0
+        for h in hits:
+            if not h.breakout_level:
+                continue
+            entry = h.breakout_level
+            stop = entry * 0.95
+            target = entry + (entry - stop)
+            conf = ("High" if h.edge_robust and (h.edge_win_rate or 0) >= 0.6
+                    else "Moderate" if h.edge_robust else "Low")
+            if rec.log_signal(h.symbol, h.pattern, "long", entry, target, stop,
+                              confidence=conf):
+                logged += 1
+        st.success(f"Logged {logged} new breakout signals.")
+    if tc3.button("✅ Evaluate matured"):
+        def _fetch(sym):
+            return _daily(provider, sym, 200)
+        prog = st.progress(0.0)
+        n = rec.evaluate(fetch=_fetch, forward_bars=20,
+                         on_progress=lambda d, t, s: prog.progress(d / max(t, 1),
+                                                                   text=s))
+        prog.empty()
+        st.success(f"Resolved {n} matured signals.")
+
+    sc = rec.scorecard()
+    if sc.get("n", 0) == 0:
+        st.info("No resolved signals yet. **Log current breakouts**, then come "
+                "back after ~20 trading days and **Evaluate matured** — the "
+                "scorecard fills in as real outcomes arrive. (Best run on a "
+                "schedule alongside your nightly precompute.)")
+    else:
+        m = st.columns(5)
+        m[0].metric("Resolved", sc["n"])
+        m[1].metric("Win rate", f"{sc['win_rate']:.0%}")
+        m[2].metric("Hit target", f"{sc['hit_target_rate']:.0%}")
+        m[3].metric("Hit stop", f"{sc['hit_stop_rate']:.0%}")
+        pf = sc["profit_factor"]
+        m[4].metric("Profit factor", "∞" if pf == float("inf") else f"{pf:.2f}")
+        st.caption(f"Avg return {sc['avg_return']:+.1%} · "
+                   f"avg win {sc['avg_win']:+.1%} · avg loss {sc['avg_loss']:+.1%} "
+                   "· every signal counted, wins and losses.")
+
+        by = rec.scorecard(by="pattern")
+        prows = [{"pattern": k, "trades": v["n"],
+                  "win rate": f"{v['win_rate']:.0%}",
+                  "avg return": f"{v['avg_return']:+.1%}",
+                  "profit factor": ("∞" if v["profit_factor"] == float("inf")
+                                    else f"{v['profit_factor']:.2f}")}
+                 for k, v in by.items() if v.get("n")]
+        if prows:
+            st.markdown("**By pattern**")
+            st.dataframe(prows, use_container_width=True, hide_index=True)
+
+    # the actual signal log (proof you can audit)
+    allsigs = rec.all_signals()
+    if allsigs:
+        st.markdown("**Signal log** (audit every call)")
+        log_rows = [{"symbol": s.symbol, "pattern": s.pattern,
+                     "entry_date": s.entry_date, "entry": round(s.entry, 2),
+                     "target": round(s.target, 2), "stop": round(s.stop, 2),
+                     "confidence": s.confidence, "status": s.status,
+                     "outcome": s.outcome or "—",
+                     "return": f"{s.ret:+.1%}" if s.ret is not None else "—"}
+                    for s in allsigs]
+        st.dataframe(log_rows, use_container_width=True, hide_index=True)
+    st.caption("Past performance does not guarantee future results. Educational.")
 
 
 # ---- Watchlist -------------------------------------------------------------

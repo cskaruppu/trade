@@ -424,6 +424,83 @@ def cmd_plan(args, cfg):
     print("\n" + plan.describe())
 
 
+def cmd_track(args, cfg):
+    """Log signals, evaluate matured ones, or print the honest scorecard."""
+    from .track_record import TrackRecord
+
+    rec = TrackRecord(args.db)
+
+    if args.action == "log":
+        from .data import get_provider
+        from .pattern_scan import scan_for_patterns
+        provider, pconf = _resolve_provider(args, cfg)
+        symbols = _resolve_symbols(args, cfg)
+
+        def prog(d, t, s):
+            print(f"\r  scanning {d}/{t}  {s:<14}", end="", file=sys.stderr)
+
+        hits, _ = scan_for_patterns(symbols, provider=provider,
+                                    provider_config=pconf, only_breakouts=True,
+                                    on_progress=prog)
+        print("", file=sys.stderr)
+        logged = 0
+        for h in hits:
+            if not h.breakout_level or not h.close:
+                continue
+            # measured-move target, support-based stop (best effort)
+            from .ai import _pattern_key
+            entry = h.breakout_level
+            # use the note's box/support if present; else a 5% stop
+            stop = entry * 0.95
+            target = entry + (entry - stop)
+            conf = ("High" if h.edge_robust and (h.edge_win_rate or 0) >= 0.6
+                    else "Moderate" if h.edge_robust else "Low")
+            if rec.log_signal(h.symbol, h.pattern, "long", entry, target, stop,
+                              confidence=conf):
+                logged += 1
+        print(f"Logged {logged} new breakout signals "
+              f"({len(hits) - logged} already open). Evaluate later with "
+              f"'nsetrade track evaluate'.")
+
+    elif args.action == "evaluate":
+        from .data import get_provider
+        provider, pconf = _resolve_provider(args, cfg)
+        prov = get_provider(provider, pconf)
+
+        def fetch(sym):
+            return prov.history(sym, period_days=args.days)
+
+        def prog(d, t, s):
+            print(f"\r  checking {d}/{t}  {s:<14}", end="", file=sys.stderr)
+
+        n = rec.evaluate(fetch=fetch, forward_bars=args.forward_bars,
+                         on_progress=prog)
+        print("", file=sys.stderr)
+        print(f"Resolved {n} matured signals. See 'nsetrade track scorecard'.")
+
+    else:  # scorecard
+        sc = rec.scorecard()
+        if sc["n"] == 0:
+            print("No resolved signals yet. Log some with 'nsetrade track log' "
+                  "and evaluate after ~20 trading days.")
+            return
+        print(f"\n=== Track record ({sc['n']} resolved signals) ===")
+        print(f"  Win rate        : {sc['win_rate']:.0%}")
+        print(f"  Hit target      : {sc['hit_target_rate']:.0%}")
+        print(f"  Hit stop        : {sc['hit_stop_rate']:.0%}")
+        print(f"  Avg return      : {sc['avg_return']:+.1%}")
+        print(f"  Avg win / loss  : {sc['avg_win']:+.1%} / {sc['avg_loss']:+.1%}")
+        pf = sc["profit_factor"]
+        print(f"  Profit factor   : {'∞' if pf == float('inf') else f'{pf:.2f}'}")
+        print("\n  By pattern:")
+        for pat, s in rec.scorecard(by="pattern").items():
+            if s.get("n"):
+                print(f"    {pat:<26} {s['n']:>3} trades · "
+                      f"{s['win_rate']:.0%} win · {s['avg_return']:+.1%} avg")
+        print("\n  Honest accounting — includes every logged signal, wins and "
+              "losses. Past results don't guarantee future ones.\n")
+
+
 def cmd_fetch_bhavcopy(args, cfg):
     """Download NSE Bhavcopy (bulk EOD, all stocks) into the local store."""
     import datetime as dt
@@ -855,6 +932,21 @@ def build_parser() -> argparse.ArgumentParser:
     ru = sub.add_parser("refresh-universe",
                         help="download the full NSE equity list (enables --universe nse_all)")
     ru.set_defaults(func=cmd_refresh_universe)
+
+    # ---- track (honest signal track record) ----
+    tk = sub.add_parser("track",
+                        help="log signals, evaluate outcomes, show the scorecard")
+    tk.add_argument("action", choices=["log", "evaluate", "scorecard"],
+                    help="log current breakouts / evaluate matured / show stats")
+    tk.add_argument("--universe", help="universe to log from (for 'log')")
+    tk.add_argument("--symbols", help="comma-separated symbols")
+    tk.add_argument("--watchlist", action="store_true", help="use your watchlist")
+    tk.add_argument("--forward-bars", type=int, default=20,
+                    help="bars to give a signal before timing out (evaluate)")
+    tk.add_argument("--days", type=int, default=120,
+                    help="history window for evaluation fetch")
+    tk.add_argument("--db", help="track-record DB (default ~/.nsetrade/track_record.db)")
+    tk.set_defaults(func=cmd_track)
 
     # ---- fetch-bhavcopy (bulk EOD data for the whole NSE) ----
     fb = sub.add_parser("fetch-bhavcopy",

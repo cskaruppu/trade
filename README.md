@@ -26,6 +26,7 @@ risk real money.
 | **Structural patterns** | Cup & Handle, Darvas Box, Bull Flag, Double Bottom/Top, Ascending/Descending Triangle — heuristic detectors with breakout levels. |
 | **Multi‑timeframe** | Run any analysis on **daily / weekly / monthly** candles (daily data is resampled, so it works for every provider). |
 | **Watchlist** | Keep your own list of stocks (`watchlist.txt`, git‑ignored), import an NSE CSV (`EQUITY_L.csv` etc.), and scan just your picks. |
+| **Track record** | Logs every signal, measures the real outcome (hit target / hit stop / timeout), and shows an honest scorecard — win rate, profit factor, expectancy — wins **and** losses. Proof over time, not a claim. |
 | **Fibonacci levels** | Auto‑computed retracement (23.6/38.2/50/61.8/78.6%) on the dominant swing and trend‑based extension targets — the industry‑standard ratios, drawn for you and fed to the AI. |
 | **Opportunity ranker** | Scans a whole universe and ranks the most tradeable setups by **conviction + historical pattern edge + reward:risk** — surfaces the best evidence‑based candidates (probability, not a profit promise). |
 | **AI analyst desk** | Optional: a panel of specialised AI agents (trend, pattern‑edge verifier, risk, devil's‑advocate) scrutinise a candidate and assign an **A–F grade** — a skeptic argument can veto a top grade. Raises shortlist *precision*, the honest version of "accuracy". |
@@ -107,6 +108,11 @@ nsetrade opportunities --universe nifty50 --side short --ai
 
 # Find stocks forming specific patterns (Cup & Handle, Darvas Box) + their edge
 nsetrade picks --patterns cup_and_handle,darvas_box --universe nifty100
+
+# Honest track record: log signals, evaluate outcomes, show the scorecard
+nsetrade track log --universe nifty100      # log today's breakout signals
+nsetrade track evaluate                     # resolve matured signals
+nsetrade track scorecard                    # win rate, profit factor, expectancy
 
 # Stocks breaking out to new highs over a chosen period (momentum screen)
 nsetrade breakouts --period "52 weeks" --universe nifty100
