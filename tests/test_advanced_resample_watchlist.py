@@ -37,9 +37,26 @@ def test_resample_weekly_aggregates():
 
 def test_resample_daily_passthrough_and_bad_tf():
     daily = ohlcv(np.linspace(100, 110, 20))
-    assert resample.resample_ohlcv(daily, "daily") is daily
+    out = resample.resample_ohlcv(daily, "daily")
+    # daily keeps the same rows, coerced to clean numpy float64
+    assert list(out["close"]) == list(daily["close"])
+    assert str(out["close"].dtype) == "float64"
     with pytest.raises(ValueError):
         resample.resample_ohlcv(daily, "yearly")
+
+
+def test_resample_coerces_nullable_dtypes():
+    n = 30
+    c = np.linspace(100, 120, n)
+    df = pd.DataFrame(
+        {"open": pd.array(c, dtype="Float64"), "high": pd.array(c, dtype="Float64"),
+         "low": pd.array(c, dtype="Float64"), "close": pd.array(c, dtype="Float64"),
+         "volume": pd.array([1000] * n, dtype="Int64")},
+        index=pd.bdate_range("2024-01-01", periods=n))
+    for tf in ("daily", "weekly", "monthly"):
+        out = resample.resample_ohlcv(df, tf)
+        assert str(out["close"].dtype) == "float64"
+        assert isinstance(out["close"].values, np.ndarray)
 
 
 def test_scale_period_days():

@@ -49,8 +49,19 @@ def resample_ohlcv(df: pd.DataFrame, timeframe: str = "daily") -> pd.DataFrame:
             f"unknown timeframe {timeframe!r}. Use one of: {', '.join(TIMEFRAMES)}"
         )
     rule = _RULES[tf]
+
+    def _clean(frame: pd.DataFrame) -> pd.DataFrame:
+        # force NumPy float64 — pandas nullable dtypes (Float64/Int64) keep a
+        # masked array whose `.values` is an ExtensionArray, which makes the
+        # detectors raise "boolean value of NA is ambiguous" on the daily frame.
+        frame = frame.copy()
+        for c in ("open", "high", "low", "close", "volume"):
+            if c in frame.columns:
+                frame[c] = pd.to_numeric(frame[c], errors="coerce").astype("float64")
+        return frame
+
     if rule is None:
-        return df
+        return _clean(df)
 
     if not isinstance(df.index, pd.DatetimeIndex):
         raise ValueError("resampling needs a DatetimeIndex")
@@ -58,7 +69,7 @@ def resample_ohlcv(df: pd.DataFrame, timeframe: str = "daily") -> pd.DataFrame:
     out = df.resample(rule).agg(_AGG)
     # drop incomplete buckets with no trades
     out = out.dropna(subset=["open", "high", "low", "close"])
-    return out
+    return _clean(out)
 
 
 def scale_period_days(period_days: int, timeframe: str) -> int:

@@ -185,7 +185,19 @@ def detect_cup_and_handle(
         return _na(name)
 
     lr = int(np.argmax(close[:b]))            # left rim
-    rr = b + int(np.argmax(close[b:]))        # right rim
+    # right rim = the FIRST local peak after the bottom that recovers to ~the
+    # left-rim level (where the handle begins). This stops a post-breakout
+    # run-up — price already trading above the rim — from being mistaken for the
+    # rim, so the cup is levelled and drawn correctly even after it has broken out.
+    left_rim_level = close[lr]
+    rim_lo = left_rim_level * (1.0 - rim_tol)
+    rr = None
+    for i in range(b + 1, n - 1):
+        if close[i] >= rim_lo and close[i] >= close[i + 1]:
+            rr = i
+            break
+    if rr is None:                            # no rim-level recovery → still forming
+        rr = b + int(np.argmax(close[b:]))
     rim_l, rim_r, bottom = close[lr], close[rr], close[b]
     rim = max(rim_l, rim_r)
     if rim <= 0:
