@@ -387,7 +387,8 @@ if _page == "🔬 Deep Dive":
         from nsetrade.tradeplan import trade_plan
         sym, tf, cap = run["sym"], run["tf"], run["cap"]
         try:
-            tf_days = {"daily": 700, "weekly": 1800, "monthly": 4000}[tf]
+            # fetch generous history so "Max" can show the stock's whole life
+            tf_days = {"daily": 4000, "weekly": 9000, "monthly": 14000}[tf]
             daily = _daily(provider, sym, tf_days)
             df = resample_ohlcv(daily, tf)
             sig = signal_for_frame(sym, df)
@@ -400,12 +401,16 @@ if _page == "🔬 Deep Dive":
                     break
             if best is None and matches:
                 best = matches[0]
-            conf = edge_row = None      # set below when a pattern is found
+            conf = edge_row = ve = None      # set below when a pattern is found
 
             # headline: what pattern + verdict
             if best:
                 key = _pattern_key(best.name)
-                ve = pattern_edge_validated(df, key) if key else None
+                # bound the walk-forward to a solid sample (keeps it fast even
+                # when the chart shows full history)
+                _edge_bars = {"daily": 1500, "weekly": 600, "monthly": 300}[tf]
+                ve = (pattern_edge_validated(df.tail(_edge_bars), key)
+                      if key else None)
                 edge_row = {
                     "pattern": best.name,
                     "edge": (f"{ve.full.win_rate:.0%} / {ve.full.occurrences}"
@@ -427,9 +432,37 @@ if _page == "🔬 Deep Dive":
                 st.caption(f"Signal: {sig.verdict} (score {sig.score:+.2f}). "
                            "Showing trend + levels instead.")
 
-            # chart: only the primary pattern drawn + its target/entry
+            # ---- accuracy & historical edge of the pattern ----
+            if best and ve and ve.full.occurrences:
+                st.markdown("#### Accuracy & historical edge")
+                a1, a2, a3, a4 = st.columns(4)
+                a1.metric("Accuracy (historical)", f"{ve.full.win_rate:.0%}",
+                          help="how often this pattern was followed by a positive "
+                               "move on THIS stock")
+                oos = (f"{ve.out_sample.win_rate:.0%}" if ve.out_sample.occurrences
+                       else "—")
+                a2.metric("Out-of-sample", oos,
+                          help="accuracy on data the test never saw — the honest "
+                               "number; ✓ robust means it held up")
+                a3.metric("Occurrences", ve.full.occurrences)
+                a4.metric("Avg forward return", f"{ve.full.avg_return:+.1%}")
+                st.caption(f"Verdict: **{ve.verdict}**. Accuracy = historical "
+                           "hit-rate, not a prediction — small samples are noisy "
+                           "and markets change.")
+            elif best:
+                st.caption("No measurable historical sample for this pattern on "
+                           "this stock yet — treat the setup as unproven.")
+
+            # ---- history depth control + chart (only the primary pattern drawn) ----
+            _per_year = {"daily": 252, "weekly": 52, "monthly": 12}[tf]
+            hsel = st.select_slider(
+                "Chart history", options=["1Y", "3Y", "5Y", "10Y", "Max"],
+                value="3Y", key="dd_hist")
+            _bars = (len(df) if hsel == "Max"
+                     else {"1Y": 1, "3Y": 3, "5Y": 5, "10Y": 10}[hsel] * _per_year)
+            _bars = max(60, min(_bars, len(df)))
             only = {_pattern_key(best.name)} if best else None
-            fig, notes = build_figure(f"{sym} · {tf}", df, bars=300,
+            fig, notes = build_figure(f"{sym} · {tf}", df, bars=_bars,
                                       show_patterns=True, show_fib=False,
                                       only_keys=only)
 

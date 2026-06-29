@@ -65,7 +65,10 @@ class DataProvider(ABC):
             raise ValueError(f"data is missing required columns: {missing}")
         df = df[OHLCV_COLUMNS].copy()
         for col in OHLCV_COLUMNS:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            # force NumPy float64 — pandas nullable dtypes (Float64/Int64) keep a
+            # masked array whose `.values` is an ExtensionArray, which makes the
+            # detectors raise "boolean value of NA is ambiguous".
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
         df = df.dropna(subset=["open", "high", "low", "close"])
         df = df[~df.index.duplicated(keep="last")].sort_index()
         if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
