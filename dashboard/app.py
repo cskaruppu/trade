@@ -5,10 +5,10 @@ Run with:
     streamlit run dashboard/app.py
 
 Grouped sidebar navigation:
-  Discover — Home, Opportunities, Ask AI (natural-language screener)
-  Analyse  — Analyse (chart + patterns + Fibonacci + AI read), Confluence,
-             Pattern Edge, Screener
-  Manage   — Watchlist, Backtest
+  Discover — Home, Opportunities, Pattern Picks, Breakouts
+  Stock    — Deep Dive (full report), Analyse, Confluence, Ask AI
+  Track    — Track Record, Pattern Edge, Watchlist, Screener, Backtest
+  Settings — AI provider (API key / Claude Code) + data coverage
 
 Binds to localhost only (see .streamlit/config.toml) — private to your machine.
 """
@@ -265,10 +265,11 @@ _k4.metric("Last cached scan", _last_scan_label())
 # ---- grouped sidebar navigation (industry-standard left nav) ---------------
 _NAV_GROUPS = {
     "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks",
-                 "📈 Breakouts", "💬 Ask AI"],
-    "Analyse": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence",
-                "🧪 Pattern Edge", "🔎 Screener"],
-    "Manage": ["📋 Track Record", "⭐ Watchlist", "📉 Backtest"],
+                 "📈 Breakouts"],
+    "Stock": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence", "💬 Ask AI"],
+    "Track": ["📋 Track Record", "🧪 Pattern Edge", "⭐ Watchlist",
+              "🔎 Screener", "📉 Backtest"],
+    "Settings": ["⚙️ Settings"],
 }
 _PAGES = [p for group in _NAV_GROUPS.values() for p in group]
 if st.session_state.get("nav_page") not in _PAGES:
@@ -284,6 +285,7 @@ _ICONS = {
     "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
     "🔎 Screener": "search", "📋 Track Record": "clipboard-check",
     "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
+    "⚙️ Settings": "gear",
 }
 
 try:
@@ -449,6 +451,14 @@ if _page == "🔬 Deep Dive":
                 st.caption(f"Verdict: **{ve.verdict}**. Accuracy = historical "
                            "hit-rate, not a prediction — small samples are noisy "
                            "and markets change.")
+                # textbook reliability benchmark (external sanity check)
+                from nsetrade.benchmarks import benchmark_caveat, benchmark_for
+                _bm = benchmark_for(key)
+                if _bm:
+                    st.caption(
+                        f"📚 Textbook reference — **{_bm['label']}**: reliability "
+                        f"*{_bm['reliability']}*, typical target-hit {_bm['typical_hit']} "
+                        f"({_bm['source']}). {benchmark_caveat()}")
             elif best:
                 st.caption("No measurable historical sample for this pattern on "
                            "this stock yet — treat the setup as unproven.")
@@ -509,6 +519,42 @@ if _page == "🔬 Deep Dive":
                 tnote = [n for n in notes if "Upside potential" in n]
                 if tnote:
                     st.success("🎯 " + tnote[0])
+
+            # ---- holding-period outlook (horizon-conditioned base rates) ----
+            st.divider()
+            st.markdown("#### 🎯 Holding-period outlook")
+            st.caption("If you held after setups that looked like today's, what did "
+                       "the next 3 / 6 / 12 months historically deliver? A target "
+                       "**band** (25th–75th percentile) with the sample size — an "
+                       "honest base rate, not a single-number forecast.")
+            from nsetrade.outlook import holding_period_outlook
+            _ow = {"daily": 40, "weekly": 26, "monthly": 12}[tf]
+            _hz = {"daily": {"3M": 63, "6M": 126, "1Y": 252},
+                   "weekly": {"3M": 13, "6M": 26, "1Y": 52},
+                   "monthly": {"3M": 3, "6M": 6, "1Y": 12}}[tf]
+            outlook = holding_period_outlook(df, window=_ow, horizons=_hz,
+                                             min_similarity=0.7, top_k=40)
+            if outlook.horizons:
+                ocols = st.columns(len(outlook.horizons))
+                for oc, h in zip(ocols, outlook.horizons):
+                    oc.metric(
+                        f"{h.label} hold (median)", f"{h.median:+.1%}",
+                        help=f"n={h.n} analogs · positive {h.win_rate:.0%} of them")
+                    oc.caption(
+                        f"🎯 ₹{h.target_med:,.0f}  \n"
+                        f"band ₹{h.target_low:,.0f} – ₹{h.target_high:,.0f}  \n"
+                        f"win {h.win_rate:.0%} · n={h.n}")
+                _wide = any(h.p75 - h.p25 > 0.4 for h in outlook.horizons)
+                _small = any(h.n < 5 for h in outlook.horizons)
+                _flag = ("⚠️ Wide bands and/or few samples — low confidence; treat "
+                         "as a rough range." if (_wide or _small) else
+                         "Bands from distinct, non-overlapping past episodes.")
+                st.caption(f"Based on {outlook.n_analogs} similar past setups on "
+                           f"this stock, from ₹{outlook.price:,.0f} today. {_flag} "
+                           "Past outcomes ≠ future returns.")
+            else:
+                st.caption(f"ℹ️ {outlook.note} — can't build a holding-period "
+                           "outlook for this stock/timeframe yet.")
 
             # ---- similar historical setups (chart analogs) ----
             st.divider()
@@ -1565,3 +1611,83 @@ if _page == "📉 Backtest":
             st.code(res.summary())
         except Exception as exc:  # noqa: BLE001
             st.error(f"Backtest failed: {exc}")
+
+
+# ---- Settings (AI provider, data) ------------------------------------------
+if _page == "⚙️ Settings":
+    import os
+    import shutil
+
+    st.subheader("⚙️ Settings")
+    st.caption("Everything stays on this laptop. Configure how EdgeForge talks to "
+               "AI and how it fetches data — no account, no cloud.")
+
+    # ---- AI provider ----
+    st.markdown("#### AI provider")
+    _tc = ThesisConfig.from_config(cfg)
+    _has_cli = bool(shutil.which("claude"))
+    cstat1, cstat2 = st.columns(2)
+    cstat1.metric("API key", "configured ✅" if _tc.enabled else "not set")
+    cstat2.metric("Claude Code CLI", "detected ✅" if _has_cli else "not found")
+
+    if _has_cli:
+        st.success("Your **Claude Code** CLI is installed. Your **Max subscription "
+                   "covers it** — so AI features can run through it at no extra "
+                   "API cost. (Provider toggle coming; for now the API-key path "
+                   "below powers the in-app AI.)")
+    else:
+        st.info("Claude Code CLI not on PATH. Install it and sign in with your Max "
+                "subscription to use AI without paying per-call — or set an API "
+                "key below.")
+
+    st.markdown("**Option A — API key** (pay-as-you-go, separate from Max). "
+                "Stored locally in `config.yaml` (git-ignored).")
+    with st.form("ai_key_form"):
+        _key_in = st.text_input("Anthropic API key", type="password",
+                                value="", placeholder="sk-ant-…  (leave blank to keep current)")
+        _model_in = st.text_input("Model", value=_tc.model)
+        _saved = st.form_submit_button("💾 Save AI settings", type="primary")
+    if _saved:
+        try:
+            import yaml
+            _path = os.environ.get("NSETRADE_CONFIG") or "config.yaml"
+            raw = {}
+            if os.path.exists(_path):
+                with open(_path, "r", encoding="utf-8") as fh:
+                    raw = yaml.safe_load(fh) or {}
+            ai_block = dict(raw.get("ai") or {})
+            if _key_in.strip():
+                ai_block["api_key"] = _key_in.strip()
+            if _model_in.strip():
+                ai_block["model"] = _model_in.strip()
+            raw["ai"] = ai_block
+            with open(_path, "w", encoding="utf-8") as fh:
+                yaml.safe_dump(raw, fh, default_flow_style=False, sort_keys=False)
+            st.success(f"Saved to {os.path.abspath(_path)}. Reload the page to "
+                       "apply. Your key is stored locally and git-ignored.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not save settings: {exc}")
+    st.caption("ℹ️ A Claude **Max** subscription does **not** include API credits — "
+               "buy those at console.anthropic.com. The CLI path above reuses Max; "
+               "the API key is the alternative.")
+
+    # ---- data & universe ----
+    st.divider()
+    st.markdown("#### Data & coverage")
+    d1, d2 = st.columns(2)
+    d1.metric("Provider", provider)
+    d2.metric("Universes available", len(list_universes()))
+    st.caption("Free sources: yfinance (quotes/history) + NSE Bhavcopy (official "
+               "EOD). Nothing is paid; nothing leaves this machine.")
+    if refresh_nse_equity_list is not None:
+        if st.button("🔄 Refresh full NSE stock list"):
+            with st.spinner("Downloading the NSE equity master list…"):
+                try:
+                    n = refresh_nse_equity_list()
+                    st.success(f"Refreshed — {n} NSE symbols now available for "
+                               "search and scans.")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Refresh failed: {exc}")
+    st.divider()
+    st.caption("EdgeForge · evidence-based, AI-native, private. "
+               "Educational only — not investment advice.")
