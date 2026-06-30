@@ -73,6 +73,7 @@ def build_opportunities_prompt(opportunities, side: str = "long") -> str:
 class ThesisConfig:
     api_key: Optional[str] = None
     model: str = DEFAULT_MODEL
+    provider: Optional[str] = None      # "api" | "claude_cli" | None (auto)
 
     @classmethod
     def from_config(cls, cfg: dict) -> "ThesisConfig":
@@ -80,11 +81,30 @@ class ThesisConfig:
         return cls(
             api_key=a.get("api_key") or os.environ.get("ANTHROPIC_API_KEY"),
             model=a.get("model", DEFAULT_MODEL),
+            provider=a.get("provider"),
         )
 
     @property
+    def mode(self) -> str:
+        """Resolved backend: 'api', 'claude_cli', or 'none'.
+
+        Honours an explicit ``provider``; otherwise auto-selects — the paid API
+        if a key is set, else the local Claude Code CLI (Max subscription) if
+        it's installed.
+        """
+        from .llm_cli import claude_cli_available
+        if self.provider == "api":
+            return "api" if self.api_key else "none"
+        if self.provider == "claude_cli":
+            return "claude_cli" if claude_cli_available() else "none"
+        # auto
+        if self.api_key:
+            return "api"
+        return "claude_cli" if claude_cli_available() else "none"
+
+    @property
     def enabled(self) -> bool:
-        return bool(self.api_key)
+        return self.mode in ("api", "claude_cli")
 
 
 def build_prompt(symbol: str, context: dict) -> str:
@@ -153,13 +173,19 @@ class ThesisWriter:
 
     def __init__(self, config: ThesisConfig, client=None):
         self.config = config
-        if client is not None:
+        self._client = None
+        if client is not None:                 # injected (tests / explicit) → API path
             self._client = client
+            self._mode = "api"
             return
-        if not config.enabled:
+        self._mode = config.mode
+        if self._mode == "claude_cli":
+            return                              # no SDK client; we shell out
+        if self._mode != "api":
             raise ValueError(
-                "AI thesis needs an Anthropic API key. Set ai.api_key in "
-                "config.yaml or the ANTHROPIC_API_KEY environment variable."
+                "AI needs either an Anthropic API key (ai.api_key / "
+                "ANTHROPIC_API_KEY) or the Claude Code CLI installed and signed "
+                "in (your Max subscription covers it)."
             )
         try:
             import anthropic
@@ -190,6 +216,8 @@ class ThesisWriter:
                   "(positive / negative / neutral). Return the sentiments in the "
                   "SAME ORDER as the headlines.\n\n"
                   + "\n".join(f"{i + 1}. {h}" for i, h in enumerate(headlines)))
+        if self._mode == "claude_cli":
+            return self._classify_via_cli(headlines, prompt)
         resp = self._client.messages.create(
             model=self.config.model, max_tokens=600,
             system=("You label financial-news sentiment for a specific stock. "
@@ -209,9 +237,34 @@ class ThesisWriter:
                  for s in sents]
         return (sents + ["neutral"] * len(headlines))[:len(headlines)]
 
+    def _classify_via_cli(self, headlines: list[str], prompt: str) -> list[str]:
+        """Headline sentiment through the Claude CLI (text → parsed JSON)."""
+        from .llm_cli import run_claude_cli
+        out = run_claude_cli(
+            prompt + "\n\nReturn ONLY a JSON array of strings, one per headline, "
+            "each 'positive', 'negative' or 'neutral'. No prose.",
+            system=("You label financial-news sentiment for a specific stock. "
+                    "Positive = likely good for the share price; negative = bad; "
+                    "neutral = mixed/no clear impact."),
+            model=self.config.model)
+        try:
+            start, end = out.find("["), out.rfind("]")
+            arr = json.loads(out[start:end + 1]) if start >= 0 else []
+        except (ValueError, json.JSONDecodeError):
+            arr = []
+        sents = [str(s).lower() for s in arr]
+        sents = [s if s in ("positive", "negative", "neutral") else "neutral"
+                 for s in sents]
+        return (sents + ["neutral"] * len(headlines))[:len(headlines)]
+
     def read_chart(self, image_png: bytes, symbol: str,
                    context: Optional[dict] = None) -> str:
         """Vision: let Claude *look at* the chart image and give an analyst read."""
+        if self._mode == "claude_cli":
+            raise RuntimeError(
+                "The chart-image (vision) read needs an Anthropic API key — the "
+                "Claude Code CLI path is text-only. Add a key in Settings to use "
+                "vision, or use the text 'AI analysis & thesis' instead.")
         import base64
 
         b64 = base64.standard_b64encode(image_png).decode("ascii")
@@ -238,6 +291,9 @@ class ThesisWriter:
         return "\n".join(parts).strip()
 
     def _send(self, system: str, prompt: str) -> str:
+        if self._mode == "claude_cli":
+            from .llm_cli import run_claude_cli
+            return run_claude_cli(prompt, system=system, model=self.config.model)
         resp = self._client.messages.create(
             model=self.config.model,
             max_tokens=2000,

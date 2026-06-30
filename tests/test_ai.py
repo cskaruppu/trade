@@ -24,8 +24,14 @@ def test_thesis_config_from_env(monkeypatch):
 
 def test_thesis_config_disabled(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # with no key AND no Claude Code CLI, AI is disabled
+    import nsetrade.llm_cli as llm_cli
+    monkeypatch.setattr(llm_cli, "claude_cli_available", lambda: False)
     cfg = ai.ThesisConfig.from_config({})
     assert not cfg.enabled
+    # explicit API provider is also disabled without a key, regardless of CLI
+    monkeypatch.setattr(llm_cli, "claude_cli_available", lambda: True)
+    assert not ai.ThesisConfig(api_key=None, provider="api").enabled
 
 
 def test_build_prompt_includes_key_facts():

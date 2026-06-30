@@ -1626,25 +1626,38 @@ if _page == "⚙️ Settings":
     st.markdown("#### AI provider")
     _tc = ThesisConfig.from_config(cfg)
     _has_cli = bool(shutil.which("claude"))
-    cstat1, cstat2 = st.columns(2)
-    cstat1.metric("API key", "configured ✅" if _tc.enabled else "not set")
+    _mode = _tc.mode
+    _mode_label = {"api": "API key", "claude_cli": "Claude Code (Max sub)",
+                   "none": "not configured"}[_mode]
+    cstat1, cstat2, cstat3 = st.columns(3)
+    cstat1.metric("API key", "set ✅" if _tc.api_key else "not set")
     cstat2.metric("Claude Code CLI", "detected ✅" if _has_cli else "not found")
+    cstat3.metric("Active AI mode", _mode_label)
 
-    if _has_cli:
-        st.success("Your **Claude Code** CLI is installed. Your **Max subscription "
-                   "covers it** — so AI features can run through it at no extra "
-                   "API cost. (Provider toggle coming; for now the API-key path "
-                   "below powers the in-app AI.)")
+    if _mode == "claude_cli":
+        st.success("AI is running through your **Claude Code CLI** — covered by "
+                   "your **Max subscription**, no per-call API charge. (Text "
+                   "features only; the chart-image *vision* read needs an API key.)")
+    elif _mode == "api":
+        st.success("AI is running through the **Anthropic API** (your key). Full "
+                   "features including the vision chart read.")
     else:
-        st.info("Claude Code CLI not on PATH. Install it and sign in with your Max "
-                "subscription to use AI without paying per-call — or set an API "
-                "key below.")
+        st.info("AI is off. Either install the Claude Code CLI and sign in with "
+                "your Max subscription (free for text), or add an API key below.")
 
-    st.markdown("**Option A — API key** (pay-as-you-go, separate from Max). "
-                "Stored locally in `config.yaml` (git-ignored).")
+    _prov_opts = {"Auto (CLI if no key)": "", "Claude Code (my Max subscription)":
+                  "claude_cli", "Anthropic API key": "api"}
+    _cur_prov = _tc.provider or ""
     with st.form("ai_key_form"):
-        _key_in = st.text_input("Anthropic API key", type="password",
-                                value="", placeholder="sk-ant-…  (leave blank to keep current)")
+        _prov_pick = st.radio(
+            "Provider", list(_prov_opts), horizontal=True,
+            index=list(_prov_opts.values()).index(_cur_prov)
+            if _cur_prov in _prov_opts.values() else 0,
+            help="Auto picks the API if a key is set, otherwise the Claude Code "
+                 "CLI (your Max subscription).")
+        _key_in = st.text_input("Anthropic API key (optional)", type="password",
+                                value="",
+                                placeholder="sk-ant-…  (leave blank to keep current)")
         _model_in = st.text_input("Model", value=_tc.model)
         _saved = st.form_submit_button("💾 Save AI settings", type="primary")
     if _saved:
@@ -1656,6 +1669,11 @@ if _page == "⚙️ Settings":
                 with open(_path, "r", encoding="utf-8") as fh:
                     raw = yaml.safe_load(fh) or {}
             ai_block = dict(raw.get("ai") or {})
+            _prov_val = _prov_opts[_prov_pick]
+            if _prov_val:
+                ai_block["provider"] = _prov_val
+            else:
+                ai_block.pop("provider", None)         # auto
             if _key_in.strip():
                 ai_block["api_key"] = _key_in.strip()
             if _model_in.strip():
@@ -1668,8 +1686,8 @@ if _page == "⚙️ Settings":
         except Exception as exc:  # noqa: BLE001
             st.error(f"Could not save settings: {exc}")
     st.caption("ℹ️ A Claude **Max** subscription does **not** include API credits — "
-               "buy those at console.anthropic.com. The CLI path above reuses Max; "
-               "the API key is the alternative.")
+               "buy those at console.anthropic.com. The Claude Code path reuses "
+               "Max (text only); the API key is the alternative and adds vision.")
 
     # ---- data & universe ----
     st.divider()
