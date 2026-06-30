@@ -266,7 +266,8 @@ _k4.metric("Last cached scan", _last_scan_label())
 _NAV_GROUPS = {
     "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks",
                  "📈 Breakouts"],
-    "Stock": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence", "💬 Ask AI"],
+    "Stock": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence", "💬 Ask AI",
+              "🗨️ AI Chat"],
     "Track": ["📋 Track Record", "🧪 Pattern Edge", "⭐ Watchlist",
               "🔎 Screener", "📉 Backtest"],
     "Settings": ["⚙️ Settings"],
@@ -285,7 +286,7 @@ _ICONS = {
     "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
     "🔎 Screener": "search", "📋 Track Record": "clipboard-check",
     "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
-    "⚙️ Settings": "gear",
+    "🗨️ AI Chat": "chat-left-text", "⚙️ Settings": "gear",
 }
 
 try:
@@ -1709,3 +1710,88 @@ if _page == "⚙️ Settings":
     st.divider()
     st.caption("EdgeForge · evidence-based, AI-native, private. "
                "Educational only — not investment advice.")
+
+
+# ---- AI Chat (grounded conversational assistant) ---------------------------
+if _page == "🗨️ AI Chat":
+    st.subheader("🗨️ AI Chat")
+    st.caption("Ask anything about a stock, a pattern, risk, or a target. Runs on "
+               "your configured AI and can be **grounded** in the live computed "
+               "context for a stock so answers cite real evidence.")
+    from nsetrade.ai import build_prompt
+    _tcfg = ThesisConfig.from_config(cfg)
+    if not _tcfg.enabled:
+        st.info("AI is off. Open **⚙️ Settings** to enable Claude Code (your Max "
+                "subscription — free for text) or add an API key.")
+    else:
+        _mlabel = {"api": "Anthropic API",
+                   "claude_cli": "Claude Code (Max subscription)"}[_tcfg.mode]
+        st.caption(f"Backend: **{_mlabel}** · model {_tcfg.model}")
+        c1, c2, c3 = st.columns([3, 1, 1])
+        _opts, _sym_by = _symbol_options()
+        _pick = c1.selectbox("Ground in stock (optional)", ["— none —"] + _opts,
+                             key="chat_pick")
+        if c2.button("📎 Attach", disabled=_pick == "— none —",
+                     use_container_width=True):
+            sym = _sym_by.get(_pick, _pick).strip().upper()
+            with st.spinner(f"Loading {sym} context…"):
+                try:
+                    daily = _daily(provider, sym, 4000)
+                    frames = {t: resample_ohlcv(daily, t)
+                              for t in ("daily", "weekly", "monthly")}
+                    ctx = assemble_context(sym, daily, with_confluence_frames=frames)
+                    fund = _fundamentals(sym)
+                    if fund:
+                        ctx["fundamentals"] = fund.summary()
+                    g = build_prompt(sym, ctx).replace(
+                        "\nWrite the trade thesis now.", "")
+                    try:
+                        from nsetrade.outlook import holding_period_outlook
+                        o = holding_period_outlook(frames["daily"])
+                        if o.horizons:
+                            g += ("\nHolding-period base rates (median forward): "
+                                  + ", ".join(
+                                      f"{h.label} {h.median:+.0%} (n={h.n}, "
+                                      f"win {h.win_rate:.0%})" for h in o.horizons))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    st.session_state["chat_ground"] = {"sym": sym, "text": g}
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not load context: {exc}")
+        if c3.button("🗑 Clear", use_container_width=True):
+            st.session_state["chat_msgs"] = []
+            st.rerun()
+
+        gr = st.session_state.get("chat_ground")
+        if gr:
+            gc1, gc2 = st.columns([4, 1])
+            gc1.success(f"📎 Grounded in **{gr['sym']}** — answers use its computed "
+                        "evidence (patterns, edge, levels, base rates).")
+            if gc2.button("Detach", use_container_width=True):
+                st.session_state.pop("chat_ground", None)
+                st.rerun()
+        else:
+            st.caption("💡 Tip: attach a stock above so answers are grounded in its "
+                       "real numbers instead of general knowledge.")
+
+        msgs = st.session_state.setdefault("chat_msgs", [])
+        for m in msgs:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+
+        q = st.chat_input("Ask about a setup, pattern, risk, or holding-period target…")
+        if q:
+            msgs.append({"role": "user", "content": q})
+            with st.chat_message("user"):
+                st.markdown(q)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    try:
+                        ans = ThesisWriter(_tcfg).chat(
+                            msgs, grounding=(gr or {}).get("text"))
+                    except Exception as exc:  # noqa: BLE001
+                        ans = f"⚠️ AI error: {exc}"
+                st.markdown(ans)
+            msgs.append({"role": "assistant", "content": ans})
+        st.caption("Educational only — not investment advice. The assistant is "
+                   "instructed to give base rates and ranges, never guarantees.")

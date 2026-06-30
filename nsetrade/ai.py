@@ -55,6 +55,20 @@ _OPP_SYSTEM = (
 )
 
 
+_CHAT_SYSTEM = (
+    "You are EdgeForge's trading-analysis assistant for Indian (NSE) equities. "
+    "Answer the user's questions about charts, patterns, setups, levels and risk, "
+    "grounded in any CONTEXT block provided (computed indicators, detected "
+    "patterns and their historical edge, holding-period base rates). Be specific "
+    "and cite the evidence you were given; do not invent fundamentals, news or "
+    "price levels that aren't provided. ALWAYS mention risk, and NEVER promise "
+    "profits or accuracy — if asked for a target, frame it as a historical base "
+    "rate / range with its sample size, not a guarantee. If the context is "
+    "missing something, say so rather than guessing. Educational analysis only — "
+    "not investment advice. Keep answers focused and concise."
+)
+
+
 def build_opportunities_prompt(opportunities, side: str = "long") -> str:
     """Pure prompt builder for the opportunity-shortlist summary."""
     lines = [f"Ranked {side} candidates (best first):"]
@@ -203,6 +217,30 @@ class ThesisWriter:
     def summarize_opportunities(self, opportunities, side: str = "long") -> str:
         """Give a portfolio-level read over a ranked opportunity list."""
         return self._send(_OPP_SYSTEM, build_opportunities_prompt(opportunities, side))
+
+    def chat(self, messages: list[dict], *, grounding: Optional[str] = None) -> str:
+        """Free-form conversational turn, optionally grounded in a stock's context.
+
+        ``messages`` is the running history as ``{"role": "user"|"assistant",
+        "content": str}`` dicts. ``grounding`` is an optional computed-context
+        block the assistant should answer from. Works on both backends — the CLI
+        path flattens the history into one prompt (it's single-shot).
+        """
+        system = _CHAT_SYSTEM
+        if grounding:
+            system += "\n\nCONTEXT for the stock under discussion:\n" + grounding
+        if self._mode == "claude_cli":
+            from .llm_cli import run_claude_cli
+            convo = "\n\n".join(f"{m['role'].upper()}: {m['content']}"
+                                for m in messages)
+            return run_claude_cli(convo + "\n\nASSISTANT:", system=system,
+                                  model=self.config.model)
+        resp = self._client.messages.create(
+            model=self.config.model, max_tokens=1200, system=system,
+            messages=[{"role": m["role"], "content": m["content"]}
+                      for m in messages])
+        parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
+        return "\n".join(parts).strip()
 
     def classify_headlines(self, headlines: list[str]) -> list[str]:
         """Tag each headline's sentiment for the stock (one batched call).

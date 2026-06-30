@@ -62,6 +62,57 @@ def test_classify_headlines_via_cli_pads_and_sanitizes(monkeypatch):
     assert out == ["positive", "neutral", "neutral"]   # sanitized + padded
 
 
+def test_chat_via_cli_flattens_history_and_grounds(monkeypatch):
+    monkeypatch.setattr(llm_cli, "claude_cli_available", lambda: True)
+    seen = {}
+
+    def fake_run(prompt, *, system=None, model=None, timeout=180):
+        seen["prompt"] = prompt
+        seen["system"] = system
+        return "Looks like a tight base; watch the breakout. Risk: a close below support."
+
+    monkeypatch.setattr(llm_cli, "run_claude_cli", fake_run)
+    w = ThesisWriter(ThesisConfig(provider="claude_cli"))
+    history = [{"role": "user", "content": "Is RELIANCE a buy?"},
+               {"role": "assistant", "content": "It depends on the setup."},
+               {"role": "user", "content": "What's the risk?"}]
+    out = w.chat(history, grounding="Support: 1200  Resistance: 1300")
+    assert "Risk" in out
+    # history flattened into the single CLI prompt; grounding injected into system
+    assert "RELIANCE" in seen["prompt"] and "What's the risk?" in seen["prompt"]
+    assert "Support: 1200" in seen["system"]
+
+
+def test_chat_via_api_passes_messages(monkeypatch):
+    class _Block:
+        type = "text"
+        text = "Grounded answer with risk noted."
+
+    class _Resp:
+        content = [_Block()]
+
+    class _Client:
+        def __init__(self):
+            self.kwargs = None
+
+        class messages:  # noqa: N801
+            pass
+
+    client = _Client()
+    captured = {}
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return _Resp()
+
+    client.messages.create = create
+    w = ThesisWriter(ThesisConfig(api_key="sk-test"), client=client)
+    out = w.chat([{"role": "user", "content": "hi"}], grounding="CTX")
+    assert "risk" in out.lower()
+    assert captured["messages"] == [{"role": "user", "content": "hi"}]
+    assert "CTX" in captured["system"]
+
+
 def test_vision_requires_api_in_cli_mode(monkeypatch):
     monkeypatch.setattr(llm_cli, "claude_cli_available", lambda: True)
     w = ThesisWriter(ThesisConfig(provider="claude_cli"))
