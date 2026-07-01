@@ -4,10 +4,12 @@ Run with:
     pip install -e ".[dashboard]"
     streamlit run dashboard/app.py
 
-Grouped sidebar navigation:
-  Discover — Home, Opportunities, Pattern Picks, Breakouts
-  Stock    — Deep Dive (full report), Analyse, Confluence, Ask AI
-  Track    — Track Record, Pattern Edge, Watchlist, Screener, Backtest
+Two-level navigation — a short sidebar of SECTIONS, sub-pages as a tab row:
+  Home
+  Discover — Opportunities, Pattern Picks, Breakouts
+  Stock    — Deep Dive (full report), Confluence, Analyse
+  AI       — AI Chat (grounded), Ask AI (natural-language screener)
+  Research — Track Record, Pattern Edge, Screener, Backtest, Watchlist
   Settings — AI provider (API key / Claude Code) + data coverage
 
 Binds to localhost only (see .streamlit/config.toml) — private to your machine.
@@ -262,32 +264,34 @@ _k2.metric("Data provider", provider)
 _k3.metric("Timeframe", timeframe)
 _k4.metric("Last cached scan", _last_scan_label())
 
-# ---- grouped sidebar navigation (industry-standard left nav) ---------------
-_NAV_GROUPS = {
-    "Discover": ["🏠 Home", "🚀 Opportunities", "🏆 Pattern Picks",
-                 "📈 Breakouts"],
-    "Stock": ["🔬 Deep Dive", "📊 Analyse", "🎯 Confluence", "💬 Ask AI",
-              "🗨️ AI Chat"],
-    "Track": ["📋 Track Record", "🧪 Pattern Edge", "⭐ Watchlist",
-              "🔎 Screener", "📉 Backtest"],
-    "Settings": ["⚙️ Settings"],
+# ---- two-level navigation: a few sidebar SECTIONS, sub-pages as tabs --------
+# Keeps the sidebar short (6 items) instead of a long flat list; the pages
+# inside a section appear as a compact tab row at the top of the content.
+_SECTIONS = {
+    "🏠 Home": ["🏠 Home"],
+    "🚀 Discover": ["🚀 Opportunities", "🏆 Pattern Picks", "📈 Breakouts"],
+    "🔬 Stock": ["🔬 Deep Dive", "🎯 Confluence", "📊 Analyse"],
+    "🗨️ AI": ["🗨️ AI Chat", "💬 Ask AI"],
+    "🧰 Research": ["📋 Track Record", "🧪 Pattern Edge", "🔎 Screener",
+                   "📉 Backtest", "⭐ Watchlist"],
+    "⚙️ Settings": ["⚙️ Settings"],
 }
-_PAGES = [p for group in _NAV_GROUPS.values() for p in group]
-if st.session_state.get("nav_page") not in _PAGES:
-    st.session_state["nav_page"] = _PAGES[0]
-st.sidebar.divider()
+_SECTION_ICONS = {"🏠 Home": "house", "🚀 Discover": "compass",
+                  "🔬 Stock": "search-heart", "🗨️ AI": "robot",
+                  "🧰 Research": "clipboard-data", "⚙️ Settings": "gear"}
+_ALL_PAGES = [p for ps in _SECTIONS.values() for p in ps]
+if st.session_state.get("nav_page") not in _ALL_PAGES:
+    st.session_state["nav_page"] = "🏠 Home"
 
-# bootstrap icon per page (used by the polished option_menu when available)
-_ICONS = {
-    "🏠 Home": "house", "🚀 Opportunities": "rocket-takeoff",
-    "🏆 Pattern Picks": "trophy", "📈 Breakouts": "graph-up-arrow",
-    "💬 Ask AI": "chat-dots", "🔬 Deep Dive": "search-heart",
-    "📊 Analyse": "bar-chart-line",
-    "🎯 Confluence": "bullseye", "🧪 Pattern Edge": "clipboard-data",
-    "🔎 Screener": "search", "📋 Track Record": "clipboard-check",
-    "⭐ Watchlist": "star", "📉 Backtest": "graph-down",
-    "🗨️ AI Chat": "chat-left-text", "⚙️ Settings": "gear",
-}
+
+def _section_of(page):
+    return next((s for s, ps in _SECTIONS.items() if page in ps),
+                next(iter(_SECTIONS)))
+
+
+_cur_section = _section_of(st.session_state["nav_page"])
+_sections = list(_SECTIONS)
+st.sidebar.divider()
 
 try:
     from streamlit_option_menu import option_menu
@@ -296,35 +300,43 @@ except ImportError:
     _HAS_OPTION_MENU = False
 
 if _HAS_OPTION_MENU:
-    _plain = [p.split(" ", 1)[1] for p in _PAGES]          # strip the emoji
+    _plain = [s.split(" ", 1)[1] for s in _sections]
     with st.sidebar:
         _sel = option_menu(
             "Menu", _plain,
-            icons=[_ICONS.get(p, "dot") for p in _PAGES],
+            icons=[_SECTION_ICONS.get(s, "dot") for s in _sections],
             menu_icon="lightning-charge-fill",
-            default_index=_PAGES.index(st.session_state["nav_page"]),
+            default_index=_sections.index(_cur_section),
             styles={
                 "container": {"background-color": "#11151c", "padding": "4px"},
                 "icon": {"color": "#79c7bd", "font-size": "0.95rem"},
-                "nav-link": {"font-size": "0.92rem", "color": "#cfd8dc",
+                "nav-link": {"font-size": "0.95rem", "color": "#cfd8dc",
                              "--hover-color": "#1b2129"},
                 "nav-link-selected": {"background-color": "#26a69a",
                                       "color": "#06120f", "font-weight": "600"},
             })
-    _page = next(p for p in _PAGES if p.split(" ", 1)[1] == _sel)
-    st.session_state["nav_page"] = _page
+    _picked_section = next(s for s in _sections if s.split(" ", 1)[1] == _sel)
 else:
-    # fallback: grouped section headers + full-width buttons (no extra dep)
     st.sidebar.markdown("### Menu")
-    for _grp, _items in _NAV_GROUPS.items():
-        st.sidebar.caption(_grp.upper())
-        for _it in _items:
-            _active = st.session_state["nav_page"] == _it
-            if st.sidebar.button(_it, key=f"nav_{_it}", use_container_width=True,
-                                 type="primary" if _active else "secondary"):
-                st.session_state["nav_page"] = _it
-                st.rerun()
-    _page = st.session_state["nav_page"]
+    _picked_section = _cur_section
+    for _s in _sections:
+        _active = _s == _cur_section
+        if st.sidebar.button(_s, key=f"sec_{_s}", use_container_width=True,
+                             type="primary" if _active else "secondary"):
+            _picked_section = _s
+
+# resolve the active page within the chosen section (sub-tabs if >1 page)
+_pages = _SECTIONS[_picked_section]
+if len(_pages) > 1:
+    _plain_pages = [p.split(" ", 1)[1] for p in _pages]
+    _cur = st.session_state.get("nav_page")
+    _idx = _pages.index(_cur) if _cur in _pages else 0
+    _sub = st.radio("section pages", _plain_pages, index=_idx, horizontal=True,
+                    label_visibility="collapsed", key=f"sub_{_picked_section}")
+    _page = next(p for p in _pages if p.split(" ", 1)[1] == _sub)
+else:
+    _page = _pages[0]
+st.session_state["nav_page"] = _page
 
 
 # ---- Home -----------------------------------------------------------------
