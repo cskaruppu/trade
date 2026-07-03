@@ -586,8 +586,34 @@ if _page == "🔬 Deep Dive":
                      "🚫 Not convinced"],
                     horizontal=True, key=f"dd_confirm_{sym}_{tf}")
                 if _conf.startswith("✅"):
-                    st.success("Noted — you confirmed this setup. Consider logging "
-                               "it in **Track Record** to measure the real outcome.")
+                    _entry = plan.entry if plan else float(
+                        best.breakout_level or df["close"].iloc[-1])
+                    _target = plan.target if plan else ex.target
+                    _stop = plan.stop if plan else ex.stop
+                    st.success("Noted — you confirmed this setup.")
+                    if _target and _stop and st.button(
+                            "📌 Log this setup to Track Record",
+                            key=f"dd_log_{sym}_{tf}", type="primary"):
+                        try:
+                            from nsetrade.track_record import TrackRecord
+                            _ok = TrackRecord().log_signal(
+                                sym, best.name, direction, _entry, _target, _stop,
+                                confidence=conf or "")
+                            if _ok:
+                                st.success(
+                                    f"✅ Logged **{sym} · {best.name}** "
+                                    f"(entry ₹{_entry:,.1f}, target ₹{_target:,.1f}, "
+                                    f"stop ₹{_stop:,.1f}). Track Record will measure "
+                                    "the real outcome — see the **Research → Track "
+                                    "Record** page.")
+                            else:
+                                st.info("You already have an open logged setup for "
+                                        "this stock + pattern — not duplicating it.")
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"Could not log: {exc}")
+                    elif not (_target and _stop):
+                        st.caption("No complete entry/target/stop to log yet — "
+                                   "wait for a confirmed breakout with levels.")
                 elif _conf.startswith("🚫"):
                     st.info("Noted — you were not convinced. The chart and criteria "
                             "above are the evidence to weigh; trust your read.")
