@@ -702,6 +702,70 @@ if _page == "🔬 Analyse":
                     st.info("Noted — you were not convinced. The chart and criteria "
                             "above are the evidence to weigh; trust your read.")
 
+            # ---- check the user's OWN read against the engine ----
+            st.divider()
+            st.markdown("#### 🔍 Check my read")
+            st.caption("Drawn your own analysis and want a second opinion? Pick the "
+                       "pattern **you** see — EdgeForge tells you if its detectors "
+                       "agree, and if not, what they actually find.")
+            _CHECK = {"Cup & Handle": "cup_and_handle", "Darvas Box": "darvas_box",
+                      "Flat Base": "flat_base", "VCP": "vcp", "Bull Flag": "flag",
+                      "Double Bottom": "double_bottom", "Double Top": "double_top",
+                      "Triangle": "triangle", "Head & Shoulders": "head_shoulders",
+                      "Accumulation Base": "accumulation"}
+            _upick = st.selectbox("What pattern do YOU see on this chart?",
+                                  ["— choose —"] + list(_CHECK), key="ck_myread")
+            if _upick != "— choose —":
+                _ukey = _CHECK[_upick]
+                _detected = {}
+                for _m in matches:
+                    _k = _pattern_key(_m.name)
+                    if _k:
+                        _detected[_k] = _m
+                if _ukey in _detected:
+                    _dm = _detected[_ukey]
+                    st.success(f"✅ **Agreed** — EdgeForge also detects a "
+                               f"**{_dm.name}** here ({_dm.status}); it's the gold "
+                               "markup on the chart above.")
+                    try:
+                        from nsetrade.edge import pattern_edge_validated
+                        _eb = {"daily": 1500, "weekly": 600,
+                               "monthly": 300}.get(tf, 1500)
+                        _ve2 = pattern_edge_validated(df.tail(_eb), _ukey)
+                        if _ve2 and _ve2.full.occurrences:
+                            st.caption(
+                                f"Historical edge on {sym}: "
+                                f"{_ve2.full.win_rate:.0%} positive over "
+                                f"{_ve2.full.occurrences} past cases · "
+                                f"out-of-sample {'✓ held up' if _ve2.robust else '— unproven'}.")
+                    except Exception:  # noqa: BLE001
+                        pass
+                else:
+                    _names = ", ".join(sorted({m.name for m in matches}))
+                    st.error(f"❌ EdgeForge does **not** currently detect a "
+                             f"**{_upick}** on this {tf} chart. What its detectors "
+                             f"actually find: **{_names or 'no clean pattern'}**.")
+                    st.caption("Not proof you're wrong — the detectors are strict "
+                               "heuristics and can miss a valid hand-drawn shape "
+                               "(try another timeframe). But treat the mismatch as a "
+                               "reason to double-check before trusting it.")
+                _tcr = ThesisConfig.from_config(cfg)
+                if _tcr.enabled and st.button("🧠 AI second opinion (plain English)",
+                                              key="ck_second"):
+                    _found = "; ".join(m.describe() for m in matches) or "nothing clean"
+                    _q = (f"On {sym} ({tf} chart), I believe I see a {_upick}. "
+                          f"EdgeForge's detectors currently find: {_found}. "
+                          "Tell me honestly whether my read is reasonable, name the "
+                          "most likely ACTUAL pattern, give the key levels "
+                          "(support/breakout/target) and the main risk. Be concise; "
+                          "base rates and ranges, never guarantees.")
+                    with st.spinner("Getting a second opinion…"):
+                        try:
+                            st.markdown(ThesisWriter(_tcr).chat(
+                                [{"role": "user", "content": _q}]))
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"AI second opinion failed: {exc}")
+
             # ---- holding-period outlook (horizon-conditioned base rates) ----
             st.divider()
             st.markdown("#### 🎯 Holding-period outlook")
