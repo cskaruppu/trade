@@ -538,8 +538,13 @@ if _page == "🔬 Analyse":
                         return build_prompt(sym, _c).replace(
                             "\nWrite the trade thesis now.", "")
 
-                    if st.button("🤖 Instant read", key="ck_read_btn",
-                                 use_container_width=True, type="primary"):
+                    # auto-run the read on first open of this stock+timeframe;
+                    # cache it so it fires ONCE (not on every rerun) — Refresh redoes it
+                    _rkey = f"{sym}:{tf}"
+                    _cache = st.session_state.setdefault("ck_read", {})
+                    _refresh = st.button("↻ Refresh read", key="ck_read_btn",
+                                         use_container_width=True)
+                    if _refresh or _rkey not in _cache:
                         with st.spinner("Reading the chart…"):
                             try:
                                 _fr = {t: resample_ohlcv(daily, t)
@@ -547,13 +552,13 @@ if _page == "🔬 Analyse":
                                 _c = assemble_context(
                                     sym, daily, with_confluence_frames=_fr)
                                 _txt = ThesisWriter(_tcock).write(sym, _c)
-                                st.session_state.setdefault("ck_read", {})[
-                                    f"{sym}:{tf}"] = _txt
+                                _cache[_rkey] = _txt
                                 # feed the report export too
                                 st.session_state.setdefault("dd_thesis", {})[sym] = _txt
                             except Exception as exc:  # noqa: BLE001
-                                st.error(f"read failed: {exc}")
-                    _rd = st.session_state.get("ck_read", {}).get(f"{sym}:{tf}")
+                                # cache the failure so it doesn't retry every rerun
+                                _cache[_rkey] = f"⚠️ read failed: {exc}"
+                    _rd = _cache.get(_rkey)
                     if _rd:
                         st.markdown(_rd)
 
