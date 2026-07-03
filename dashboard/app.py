@@ -4,13 +4,14 @@ Run with:
     pip install -e ".[dashboard]"
     streamlit run dashboard/app.py
 
-Two-level navigation — a short sidebar of SECTIONS, sub-pages as a tab row:
-  Home
-  Discover — Opportunities, Pattern Picks, Breakouts
-  Stock    — Deep Dive (full report), Confluence, Analyse
-  AI       — AI Chat (grounded), Ask AI (natural-language screener)
-  Research — Track Record, Pattern Edge, Screener, Backtest, Watchlist
-  Settings — AI provider (API key / Claude Code) + data coverage
+Focused cockpit navigation — the chart + AI workspace IS the product:
+  Analyse      — the cockpit: chart (pattern drawn) on the left, AI read + chat
+                 on the right, why/targets/confirm below. The default page.
+  Discover     — Opportunities, Pattern Picks, Breakouts
+  Track Record — the honest scorecard
+  Advanced     — Chart, Confluence, Pattern Edge, Screener, Backtest, Watchlist,
+                 AI Chat, Ask AI (power-tools, out of the way)
+  Settings     — AI provider (API key / Claude Code) + data coverage
 
 Binds to localhost only (see .streamlit/config.toml) — private to your machine.
 """
@@ -267,21 +268,22 @@ _k4.metric("Last cached scan", _last_scan_label())
 # ---- two-level navigation: a few sidebar SECTIONS, sub-pages as tabs --------
 # Keeps the sidebar short (6 items) instead of a long flat list; the pages
 # inside a section appear as a compact tab row at the top of the content.
+# Focused cockpit: the chart+AI workspace is the whole product; everything else
+# is discovery, the honest record, or power-tools tucked under "Advanced".
 _SECTIONS = {
-    "🏠 Home": ["🏠 Home"],
+    "🔬 Analyse": ["🔬 Analyse"],
     "🚀 Discover": ["🚀 Opportunities", "🏆 Pattern Picks", "📈 Breakouts"],
-    "🔬 Stock": ["🔬 Deep Dive", "🎯 Confluence", "📊 Analyse"],
-    "🗨️ AI": ["🗨️ AI Chat", "💬 Ask AI"],
-    "🧰 Research": ["📋 Track Record", "🧪 Pattern Edge", "🔎 Screener",
-                   "📉 Backtest", "⭐ Watchlist"],
+    "📋 Track Record": ["📋 Track Record"],
+    "🧰 Advanced": ["📊 Chart", "🎯 Confluence", "🧪 Pattern Edge", "🔎 Screener",
+                   "📉 Backtest", "⭐ Watchlist", "🗨️ AI Chat", "💬 Ask AI"],
     "⚙️ Settings": ["⚙️ Settings"],
 }
-_SECTION_ICONS = {"🏠 Home": "house", "🚀 Discover": "compass",
-                  "🔬 Stock": "search-heart", "🗨️ AI": "robot",
-                  "🧰 Research": "clipboard-data", "⚙️ Settings": "gear"}
+_SECTION_ICONS = {"🔬 Analyse": "search-heart", "🚀 Discover": "compass",
+                  "📋 Track Record": "clipboard-check", "🧰 Advanced": "sliders",
+                  "⚙️ Settings": "gear"}
 _ALL_PAGES = [p for ps in _SECTIONS.values() for p in ps]
 if st.session_state.get("nav_page") not in _ALL_PAGES:
-    st.session_state["nav_page"] = "🏠 Home"
+    st.session_state["nav_page"] = "🔬 Analyse"
 
 
 def _section_of(page):
@@ -372,8 +374,8 @@ if _page == "🏠 Home":
 
 
 # ---- Deep Dive (single-stock full report) ----------------------------------
-if _page == "🔬 Deep Dive":
-    st.subheader("🔬 Single-stock deep dive")
+if _page == "🔬 Analyse":
+    st.subheader("🔬 Analyse — chart + AI")
     st.caption("One stock, full report: which pattern it's forming (drawn on the "
                "chart), the confirmed entry / stop / target, its historical edge, "
                "and an AI read — over the full chart history.")
@@ -513,8 +515,69 @@ if _page == "🔬 Deep Dive":
             except Exception:  # noqa: BLE001
                 pass
 
-            st.plotly_chart(fig, use_container_width=True,
-                            config={"scrollZoom": True, "displaylogo": False})
+            # ---- cockpit: chart on the left, AI analyst on the right ----
+            _ck_l, _ck_r = st.columns([2, 1], gap="medium")
+            with _ck_l:
+                st.plotly_chart(fig, use_container_width=True,
+                                config={"scrollZoom": True, "displaylogo": False})
+            with _ck_r:
+                st.markdown("##### 🤖 AI analyst")
+                _tcock = ThesisConfig.from_config(cfg)
+                if not _tcock.enabled:
+                    st.caption("Enable AI in **⚙️ Settings** (free via your Max "
+                               "subscription) for an instant read + chat right here.")
+                else:
+                    from nsetrade.ai import build_prompt
+                    _mlab = {"api": "API", "claude_cli": "Max sub"}[_tcock.mode]
+                    st.caption(f"via {_mlab}")
+
+                    def _ground():
+                        _fr = {t: resample_ohlcv(daily, t)
+                               for t in ("daily", "weekly", "monthly")}
+                        _c = assemble_context(sym, daily, with_confluence_frames=_fr)
+                        return build_prompt(sym, _c).replace(
+                            "\nWrite the trade thesis now.", "")
+
+                    if st.button("🤖 Instant read", key="ck_read_btn",
+                                 use_container_width=True, type="primary"):
+                        with st.spinner("Reading the chart…"):
+                            try:
+                                _fr = {t: resample_ohlcv(daily, t)
+                                       for t in ("daily", "weekly", "monthly")}
+                                _c = assemble_context(
+                                    sym, daily, with_confluence_frames=_fr)
+                                _txt = ThesisWriter(_tcock).write(sym, _c)
+                                st.session_state.setdefault("ck_read", {})[
+                                    f"{sym}:{tf}"] = _txt
+                                # feed the report export too
+                                st.session_state.setdefault("dd_thesis", {})[sym] = _txt
+                            except Exception as exc:  # noqa: BLE001
+                                st.error(f"read failed: {exc}")
+                    _rd = st.session_state.get("ck_read", {}).get(f"{sym}:{tf}")
+                    if _rd:
+                        st.markdown(_rd)
+
+                    st.markdown("**💬 Ask about this chart**")
+                    _hist = st.session_state.setdefault("ck_chat", {}).setdefault(
+                        sym, [])
+                    for _m in _hist[-6:]:
+                        st.chat_message(_m["role"]).markdown(_m["content"])
+                    with st.form(f"ck_chat_{sym}", clear_on_submit=True):
+                        _cq = st.text_input(
+                            "chatq", label_visibility="collapsed",
+                            placeholder="e.g. is this a valid breakout?")
+                        _send = st.form_submit_button("Send",
+                                                      use_container_width=True)
+                    if _send and _cq.strip():
+                        _hist.append({"role": "user", "content": _cq.strip()})
+                        with st.spinner("Thinking…"):
+                            try:
+                                _ans = ThesisWriter(_tcock).chat(
+                                    _hist, grounding=_ground())
+                            except Exception as exc:  # noqa: BLE001
+                                _ans = f"⚠️ {exc}"
+                        _hist.append({"role": "assistant", "content": _ans})
+                        st.rerun()
 
             # explicit trade levels
             if plan:
@@ -781,39 +844,21 @@ if _page == "🔬 Deep Dive":
                        "Yahoo. Fundamentals from Yahoo — free but **unofficial** "
                        "and may be incomplete or stale. Verify before acting.")
 
-            # AI analysis
-            st.divider()
+            # AI vision read (the one AI extra not in the cockpit panel; API-only)
             _tcfg_dd = ThesisConfig.from_config(cfg)
-            if not _tcfg_dd.enabled:
-                st.caption("💡 Add an Anthropic API key for a full AI read "
-                           "(text thesis + a vision read of this chart).")
-            else:
-                dac1, dac2 = st.columns(2)
-                if dac1.button("🤖 AI analysis & thesis", key="dd_ai"):
-                    with st.spinner(f"Claude ({_tcfg_dd.model}) is analysing {sym}…"):
-                        try:
-                            frames = {t: resample_ohlcv(daily, t)
-                                      for t in ("daily", "weekly", "monthly")}
-                            ctx = assemble_context(sym, daily,
-                                                   with_confluence_frames=frames)
-                            if fund:
-                                ctx["fundamentals"] = fund.summary()
-                            if news:
-                                ctx["news"] = [n["title"] for n in news]
-                            _thesis = ThesisWriter(_tcfg_dd).write(sym, ctx)
-                            st.session_state.setdefault("dd_thesis", {})[sym] = _thesis
-                            st.markdown(_thesis)
-                        except Exception as exc:  # noqa: BLE001
-                            st.error(f"AI analysis failed: {exc}")
-                if dac2.button("👁 AI chart read (vision)", key="dd_vis"):
-                    with st.spinner(f"Claude is reading {sym}'s chart…"):
-                        try:
-                            from nsetrade.charts import render_chart_bytes
-                            png = render_chart_bytes(f"{sym} ({tf})", df, bars=220)
-                            st.markdown(ThesisWriter(_tcfg_dd).read_chart(png, sym))
-                        except Exception as exc:  # noqa: BLE001
-                            st.error(f"chart read failed: {exc}")
-            st.caption("AI is educational analysis, not investment advice.")
+            if _tcfg_dd.mode == "api":
+                with st.expander("👁 AI chart-image read (vision)"):
+                    if st.button("Read this chart image", key="dd_vis"):
+                        with st.spinner(f"Claude is reading {sym}'s chart…"):
+                            try:
+                                from nsetrade.charts import render_chart_bytes
+                                png = render_chart_bytes(f"{sym} ({tf})", df, bars=220)
+                                st.markdown(
+                                    ThesisWriter(_tcfg_dd).read_chart(png, sym))
+                            except Exception as exc:  # noqa: BLE001
+                                st.error(f"chart read failed: {exc}")
+            st.caption("AI is educational analysis, not investment advice. Use the "
+                       "**🤖 AI analyst** panel beside the chart for the read + chat.")
 
             # ---- export the report ----
             st.divider()
@@ -1286,7 +1331,7 @@ if _page == "🚀 Opportunities":
 
 
 # ---- Analyse ---------------------------------------------------------------
-if _page == "📊 Analyse":
+if _page == "📊 Chart":
     col1, col2, col3 = st.columns([2, 1, 1])
     symbol = col1.text_input("NSE symbol", value="RELIANCE").strip().upper()
     days = col2.slider("History (days)", 200, 1500, 500, step=50)
