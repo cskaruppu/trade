@@ -518,8 +518,23 @@ if _page == "🔬 Analyse":
             # ---- cockpit: chart on the left, AI analyst on the right ----
             _ck_l, _ck_r = st.columns([2, 1], gap="medium")
             with _ck_l:
-                st.plotly_chart(fig, use_container_width=True,
-                                config={"scrollZoom": True, "displaylogo": False})
+                # draw-your-own tools: pick a tool, then draw on the chart
+                _DRAW = {"🖐 Pan": "pan", "📈 Trendline": "drawline",
+                         "▭ Zone": "drawrect", "✏️ Freehand": "drawopenpath",
+                         "🧽 Erase": "eraseshape"}
+                _dtool = st.radio("draw", list(_DRAW), horizontal=True,
+                                  label_visibility="collapsed", key="ck_draw")
+                fig.update_layout(dragmode=_DRAW[_dtool])
+                st.plotly_chart(
+                    fig, use_container_width=True,
+                    config={"scrollZoom": True, "displaylogo": False,
+                            "modeBarButtonsToAdd": ["drawline", "drawrect",
+                                                    "drawopenpath", "drawcircle",
+                                                    "eraseshape"]})
+                st.caption("✏️ **Draw your own** — pick a tool above (or the chart "
+                           "toolbar), drag on the chart to mark trendlines / zones. "
+                           "Click a shape then **🧽 Erase**, or use the toolbar's "
+                           "eraser. Your drawings sit on top of the detected pattern.")
             with _ck_r:
                 st.markdown("##### 🤖 AI analyst")
                 _tcock = ThesisConfig.from_config(cfg)

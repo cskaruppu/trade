@@ -226,6 +226,9 @@ def build_figure(
         legend=dict(orientation="h", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
         hovermode="x unified",
         dragmode="pan",
+        # styling for shapes the user draws by hand (trendlines / zones)
+        newshape=dict(line=dict(color="#f5c542", width=2),
+                      fillcolor="rgba(245,197,66,0.10)"),
     )
     for r in range(1, 5):
         fig.update_xaxes(gridcolor=_GRID, row=r, col=1)
