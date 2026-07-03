@@ -446,6 +446,8 @@ def _pattern_key(name: str) -> Optional[str]:
     """Map a PatternMatch display name back to its detector key."""
     from .patterns.advanced import ADVANCED_DETECTORS
     n = name.lower()
+    if "rounding" in n or "saucer" in n:
+        return "rounding_bottom"
     if "cup" in n:
         return "cup_and_handle"
     if "darvas" in n:

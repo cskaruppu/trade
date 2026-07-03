@@ -45,6 +45,9 @@ _BASIS = {
     "vcp": "A series of progressively tighter pullbacks as the stock coils near its "
            "highs (supply drying up), then a break above the last pivot. Basis: "
            "volatility contraction preceding expansion.",
+    "rounding_bottom": "A deep, long, U-shaped 'saucer' base that gradually recovers "
+                       "and reclaims a horizontal resistance near the prior high. "
+                       "Basis: a multi-quarter accumulation/turnaround completing.",
     "flat_base": "A shallow, tight sideways shelf that forms *after* an advance, then "
                  "a breakout above the shelf. Basis: the stock digesting gains before "
                  "continuing higher.",

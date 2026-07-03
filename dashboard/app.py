@@ -708,7 +708,9 @@ if _page == "🔬 Analyse":
             st.caption("Drawn your own analysis and want a second opinion? Pick the "
                        "pattern **you** see — EdgeForge tells you if its detectors "
                        "agree, and if not, what they actually find.")
-            _CHECK = {"Cup & Handle": "cup_and_handle", "Darvas Box": "darvas_box",
+            _CHECK = {"Cup & Handle": "cup_and_handle",
+                      "Rounding Bottom": "rounding_bottom",
+                      "Darvas Box": "darvas_box",
                       "Flat Base": "flat_base", "VCP": "vcp", "Bull Flag": "flag",
                       "Double Bottom": "double_bottom", "Double Top": "double_top",
                       "Triangle": "triangle", "Head & Shoulders": "head_shoulders",
@@ -987,6 +989,7 @@ if _page == "🏆 Pattern Picks":
                "out-of-sample). The strongest setups rise to the top.")
     _PAT_CHOICES = {
         "Cup & Handle": "cup_and_handle",
+        "Rounding Bottom": "rounding_bottom",
         "Darvas Box": "darvas_box",
         "Flat Base": "flat_base",
         "VCP (Volatility Contraction)": "vcp",

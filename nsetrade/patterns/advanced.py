@@ -304,6 +304,70 @@ def detect_cup_and_handle(
     )
 
 
+def detect_rounding_bottom(
+    df: pd.DataFrame,
+    *,
+    lookback: int = 300,
+    min_depth: float = 0.35,
+    max_depth: float = 0.80,
+    min_bars: int = 40,
+    rim_tol: float = 0.12,
+) -> PatternMatch:
+    """Rounding bottom / saucer base: a deep, long, U-shaped recovery that
+    reclaims a horizontal resistance near the prior high.
+
+    Like a cup but *deeper* (``min_depth``..``max_depth``, above the cup's
+    shallow range) and typically longer — the multi-quarter base seen on weekly/
+    monthly charts. The lowest close sits near the middle; the rims on both sides
+    are roughly level; and the base must be genuinely *rounded* (a saucer, not a
+    V). A breakout fires when price reclaims the rim.
+    """
+    name = "Rounding Bottom"
+    win = df.tail(lookback)
+    n = len(win)
+    if n < max(60, min_bars + 10):
+        return _na(name, "not enough bars")
+    close = win["close"].values
+    lo, hi = int(n * 0.20), int(n * 0.80)
+    b = lo + int(np.argmin(close[lo:hi]))
+    if b <= 0 or b >= n - 1:
+        return _na(name)
+    lr = int(np.argmax(close[:b]))
+    rr = b + int(np.argmax(close[b:]))
+    rim_l, rim_r, bottom = close[lr], close[rr], close[b]
+    rim = max(rim_l, rim_r)
+    if rim <= 0 or bottom <= 0:
+        return _na(name)
+
+    rims_similar = abs(rim_l - rim_r) / rim <= rim_tol
+    depth = (rim - bottom) / rim
+    depth_ok = min_depth <= depth <= max_depth
+    width = rr - lr
+    centered = 0.30 <= (b - lr) / max(width, 1) <= 0.70
+    wide_enough = width >= min_bars
+    # roundness: a saucer holds many bars near the low; a V spikes and leaves
+    near = np.where(close <= bottom * (1 + max(depth * 0.15, 0.03)))[0]
+    rounded = len(near) >= max(5, width // 6)
+
+    found = bool(rims_similar and depth_ok and centered and wide_enough and rounded)
+    last = float(close[-1])
+    status = "breakout" if (found and last >= rim * 0.99) else (
+        "forming" if found else "none")
+    overlays = None
+    if found:
+        overlays = [
+            _quad_curve(win.index, close, lr, b, rr),        # the rounded saucer
+            {"kind": "line",                                 # horizontal rim (resistance)
+             "x": _pos_to_dates(win.index, [lr, n - 1]),
+             "y": [float(rim), float(rim)]},
+        ]
+    return PatternMatch(
+        name=name, found=found, direction="bullish", status=status,
+        breakout_level=float(rim), support=float(bottom), resistance=float(rim),
+        start=win.index[lr], end=df.index[-1],
+        note=f"depth {depth:.0%}, base {width} bars", overlays=overlays)
+
+
 # --------------------------------------------------------------------------
 # Flag / Pennant (bull continuation)
 # --------------------------------------------------------------------------
@@ -844,6 +908,7 @@ def detect_accumulation(
 
 ADVANCED_DETECTORS = {
     "cup_and_handle": detect_cup_and_handle,
+    "rounding_bottom": detect_rounding_bottom,
     "darvas_box": detect_darvas_box,
     "flat_base": detect_flat_base,
     "flag": detect_flag,
@@ -858,6 +923,7 @@ ADVANCED_DETECTORS = {
 
 ADVANCED_PATTERNS = [
     ("cup_and_handle", "Cup & Handle", 1),
+    ("rounding_bottom", "Rounding Bottom", 1),
     ("darvas_box", "Darvas Box", 1),
     ("flat_base", "Flat Base", 1),
     ("flag", "Bull Flag", 1),
