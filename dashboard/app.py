@@ -531,10 +531,11 @@ if _page == "🔬 Analyse":
                             "modeBarButtonsToAdd": ["drawline", "drawrect",
                                                     "drawopenpath", "drawcircle",
                                                     "eraseshape"]})
-                st.caption("✏️ **Draw your own** — pick a tool above (or the chart "
-                           "toolbar), drag on the chart to mark trendlines / zones. "
-                           "Click a shape then **🧽 Erase**, or use the toolbar's "
-                           "eraser. Your drawings sit on top of the detected pattern.")
+                st.caption("🟡 **Gold = AI markup** — EdgeForge analysed this stock "
+                           "and hand-marked the pattern it found (✍️ labelled), the "
+                           "way an analyst would. 🔵 **Cyan = your own** — pick a "
+                           "tool above and draw your trendlines / zones over it to "
+                           "agree or disagree. Ask the 🤖 AI panel about either.")
             with _ck_r:
                 st.markdown("##### 🤖 AI analyst")
                 _tcock = ThesisConfig.from_config(cfg)

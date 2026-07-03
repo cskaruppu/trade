@@ -105,21 +105,34 @@ def build_figure(
                         row=1, col=1)
                 except Exception:  # noqa: BLE001 - overlay is best-effort
                     pass
-            # draw the pattern's actual shape (cup U-curve, W, neckline, band…)
+            # draw the pattern's actual shape as hand-drawn "pen" markup — a gold
+            # analyst stroke, labelled once, so the AI's read looks marked-up-by-hand
+            _pen = "#f5c542"
+            _labeled = False
             for ov in (getattr(m, "overlays", None) or []):
                 try:
                     if ov.get("kind") == "band":      # accumulation/support zone
                         fig.add_hrect(y0=ov["y0"], y1=ov["y1"], line_width=0,
-                                      fillcolor="rgba(66,165,245,0.16)",
+                                      fillcolor="rgba(245,197,66,0.12)",
+                                      line=dict(color=_pen, width=1),
                                       row=1, col=1)
                         continue
                     fig.add_trace(go.Scatter(
                         x=ov["x"], y=ov["y"], mode="lines",
-                        line=dict(color="#e6e9ef", width=2,
+                        line=dict(color=_pen, width=2.6,
                                   shape="spline" if ov.get("kind") == "spline"
                                   else "linear"),
+                        opacity=0.95,
                         name=m.name, showlegend=False, hoverinfo="skip"),
                         row=1, col=1)
+                    if not _labeled and ov.get("x") and ov.get("y"):
+                        _mid = len(ov["x"]) // 2
+                        fig.add_annotation(
+                            x=ov["x"][_mid], y=ov["y"][_mid], row=1, col=1,
+                            text=f"✍️ {m.name}", showarrow=False, yshift=14,
+                            font=dict(color=_pen, size=11),
+                            bgcolor="rgba(17,21,28,0.75)")
+                        _labeled = True
                 except Exception:  # noqa: BLE001 - overlay is best-effort
                     pass
 
@@ -226,9 +239,9 @@ def build_figure(
         legend=dict(orientation="h", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
         hovermode="x unified",
         dragmode="pan",
-        # styling for shapes the user draws by hand (trendlines / zones)
-        newshape=dict(line=dict(color="#f5c542", width=2),
-                      fillcolor="rgba(245,197,66,0.10)"),
+        # user's own hand-drawn shapes in cyan — distinct from the AI's gold markup
+        newshape=dict(line=dict(color="#4fc3f7", width=2),
+                      fillcolor="rgba(79,195,247,0.10)"),
     )
     for r in range(1, 5):
         fig.update_xaxes(gridcolor=_GRID, row=r, col=1)
