@@ -148,6 +148,68 @@ def detect_darvas_box(
     )
 
 
+def detect_flat_base(
+    df: pd.DataFrame,
+    *,
+    base_window: int = 30,
+    breakout_window: int = 5,
+    max_base_pct: float = 0.15,
+    min_prior_gain: float = 0.20,
+) -> PatternMatch:
+    """O'Neil flat base: a shallow, tight sideways shelf *after a prior advance*,
+    then a breakout above the shelf top.
+
+    Distinct from a Darvas box by two rules: the base must be **tight** (range
+    <= ``max_base_pct``, typically ~15%) and it must follow a **prior advance**
+    (the stock rose at least ``min_prior_gain`` into the base). That "digestion
+    after a run" is what makes a flat base a continuation setup.
+    """
+    name = "Flat Base"
+    if len(df) < base_window + breakout_window + 10:
+        return _na(name, f"need >= {base_window + breakout_window + 10} bars")
+
+    base = df.iloc[-(base_window + breakout_window):-breakout_window]
+    recent = df.iloc[-breakout_window:]
+    base_top = float(base["high"].max())
+    base_bottom = float(base["low"].min())
+    if base_bottom <= 0:
+        return _na(name)
+    base_range = (base_top - base_bottom) / base_bottom
+    tight = base_range <= max_base_pct
+
+    # prior advance: the block before the base should have risen into it
+    pre = df.iloc[:-(base_window + breakout_window)]
+    prior_ok = False
+    prior_gain = 0.0
+    if len(pre) >= 10:
+        prior_low = float(pre["close"].tail(2 * base_window).min())
+        if prior_low > 0:
+            prior_gain = (base_bottom - prior_low) / prior_low
+            prior_ok = prior_gain >= min_prior_gain
+
+    broke_up = bool((recent["close"] > base_top).any())
+    last = float(df["close"].iloc[-1])
+    found = bool(tight and prior_ok and last > base_bottom)
+    status = "breakout" if (found and broke_up) else ("forming" if found else "none")
+    overlays = None
+    if found:
+        overlays = [{"kind": "band", "y0": base_bottom, "y1": base_top}]
+    return PatternMatch(
+        name=name,
+        found=found,
+        direction="bullish",
+        status=status,
+        breakout_level=base_top,
+        support=base_bottom,
+        resistance=base_top,
+        start=base.index[0],
+        end=df.index[-1],
+        note=f"base {base_bottom:.1f}-{base_top:.1f} ({base_range:.0%} wide), "
+             f"prior advance +{prior_gain:.0%}",
+        overlays=overlays,
+    )
+
+
 # --------------------------------------------------------------------------
 # Cup and Handle
 # --------------------------------------------------------------------------
@@ -783,6 +845,7 @@ def detect_accumulation(
 ADVANCED_DETECTORS = {
     "cup_and_handle": detect_cup_and_handle,
     "darvas_box": detect_darvas_box,
+    "flat_base": detect_flat_base,
     "flag": detect_flag,
     "double_bottom": detect_double_bottom,
     "double_top": detect_double_top,
@@ -796,6 +859,7 @@ ADVANCED_DETECTORS = {
 ADVANCED_PATTERNS = [
     ("cup_and_handle", "Cup & Handle", 1),
     ("darvas_box", "Darvas Box", 1),
+    ("flat_base", "Flat Base", 1),
     ("flag", "Bull Flag", 1),
     ("double_bottom", "Double Bottom", 1),
     ("double_top", "Double Top", -1),

@@ -533,6 +533,65 @@ if _page == "🔬 Deep Dive":
                 if tnote:
                     st.success("🎯 " + tnote[0])
 
+            # ---- why this pattern (analysis basis + downside + confirm) ----
+            if best:
+                st.divider()
+                st.markdown("#### 📐 Why this pattern (analysis basis)")
+                from nsetrade.explain import explain_pattern
+                ex = explain_pattern(df, best, key=_pattern_key(best.name))
+                st.caption(f"**{best.name}** on the **{tf}** chart. {ex.basis}")
+                st.caption("💡 Switch the **Timeframe** (daily / weekly / monthly) "
+                           "above to see this analysis redraw on each chart.")
+                for _c in ex.criteria:
+                    _mark = ("✅" if _c.ok is True else "❌" if _c.ok is False
+                             else "•")
+                    st.markdown(f"- {_mark} **{_c.label}** — {_c.detail}")
+                dgc1, dgc2 = st.columns(2)
+                if ex.target is not None:
+                    dgc1.metric("Measured-move target", f"₹{ex.target:,.1f}",
+                                f"{ex.upside_pct:+.0%}" if ex.upside_pct else None)
+                if ex.stop is not None:
+                    dgc2.metric("Invalidation (stop)", f"₹{ex.stop:,.1f}",
+                                f"{ex.downside_pct:+.0%}" if ex.downside_pct else None,
+                                delta_color="inverse")
+                if ex.invalidation:
+                    st.warning("⛔ **Downside:** " + ex.invalidation)
+
+                # AI plain-English explanation (optional, on the configured backend)
+                _tex = ThesisConfig.from_config(cfg)
+                if _tex.enabled and st.button("🧠 Explain in plain English (AI)",
+                                              key="dd_explain"):
+                    _crit = "; ".join(f"{c.label}: {c.detail}" for c in ex.criteria)
+                    _q = (f"Explain in plain English why {sym} shows a "
+                          f"{best.name} on the {tf} chart, and the main risks. "
+                          f"Basis: {ex.basis} Criteria — {_crit}. "
+                          f"Target ~{ex.target}, invalidation ~{ex.stop}. "
+                          "Be concise; give base rates/ranges not guarantees.")
+                    with st.spinner("Claude is explaining the setup…"):
+                        try:
+                            _ans = ThesisWriter(_tex).chat([{"role": "user",
+                                                             "content": _q}])
+                            st.session_state.setdefault("dd_explain_txt", {})[
+                                f"{sym}:{tf}"] = _ans
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"AI explanation failed: {exc}")
+                _etxt = st.session_state.get("dd_explain_txt", {}).get(f"{sym}:{tf}")
+                if _etxt:
+                    st.markdown(_etxt)
+
+                # let the user confirm the read (their judgement, recorded)
+                _conf = st.radio(
+                    "Your call on this setup",
+                    ["— not sure —", "✅ I agree — valid setup",
+                     "🚫 Not convinced"],
+                    horizontal=True, key=f"dd_confirm_{sym}_{tf}")
+                if _conf.startswith("✅"):
+                    st.success("Noted — you confirmed this setup. Consider logging "
+                               "it in **Track Record** to measure the real outcome.")
+                elif _conf.startswith("🚫"):
+                    st.info("Noted — you were not convinced. The chart and criteria "
+                            "above are the evidence to weigh; trust your read.")
+
             # ---- holding-period outlook (horizon-conditioned base rates) ----
             st.divider()
             st.markdown("#### 🎯 Holding-period outlook")
@@ -773,6 +832,7 @@ if _page == "🏆 Pattern Picks":
     _PAT_CHOICES = {
         "Cup & Handle": "cup_and_handle",
         "Darvas Box": "darvas_box",
+        "Flat Base": "flat_base",
         "VCP (Volatility Contraction)": "vcp",
         "Accumulation Base (trendline + support)": "accumulation",
         "Bull Flag": "flag",

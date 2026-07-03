@@ -450,6 +450,8 @@ def _pattern_key(name: str) -> Optional[str]:
         return "cup_and_handle"
     if "darvas" in n:
         return "darvas_box"
+    if "flat base" in n or "flat_base" in n:
+        return "flat_base"
     if "flag" in n:
         return "flag"
     if "double bottom" in n:
