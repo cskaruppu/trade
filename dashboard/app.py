@@ -621,7 +621,17 @@ if _page == "🔬 Analyse":
             if best:
                 st.divider()
                 st.markdown("#### 📐 Why this pattern (analysis basis)")
-                from nsetrade.explain import explain_pattern
+                from nsetrade.explain import breakout_check, explain_pattern
+                # front and centre: has it ACTUALLY broken out yet?
+                _bc = breakout_check(df, best)
+                if _bc.state == "confirmed":
+                    st.success(f"{_bc.emoji} **Breakout confirmed** — {_bc.message}")
+                elif _bc.state == "volume_light":
+                    st.warning(f"{_bc.emoji} **Breakout unconfirmed** — {_bc.message}")
+                elif _bc.state == "approaching":
+                    st.info(f"{_bc.emoji} **Not yet — approaching** — {_bc.message}")
+                elif _bc.state == "far":
+                    st.info(f"{_bc.emoji} **Still building** — {_bc.message}")
                 ex = explain_pattern(df, best, key=_pattern_key(best.name))
                 st.caption(f"**{best.name}** on the **{tf}** chart. {ex.basis}")
                 st.caption("💡 Switch the **Timeframe** (daily / weekly / monthly) "

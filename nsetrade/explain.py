@@ -26,6 +26,61 @@ class Criterion:
 
 
 @dataclass
+class BreakoutCheck:
+    state: str            # confirmed | volume_light | approaching | far | none
+    emoji: str
+    message: str
+    level: Optional[float] = None
+    pct_to_level: Optional[float] = None   # last close vs the trigger (signed)
+    volume_ok: Optional[bool] = None
+
+
+def breakout_check(df: pd.DataFrame, match, *, near_pct: float = 0.03,
+                   vol_lookback: int = 50, vol_mult: float = 1.3) -> BreakoutCheck:
+    """Has price *actually* broken out — a decisive close above the trigger, on
+    above-average volume — or is it still just approaching it?
+
+    Guards against the common false start of buying a trendline poke while the
+    real horizontal resistance (the rim/pivot) is still overhead. ``near_pct`` is
+    how close (below) counts as "approaching".
+    """
+    level = getattr(match, "breakout_level", None)
+    if df is None or not len(df) or not level or level <= 0:
+        return BreakoutCheck("none", "•", "no breakout level to check")
+    last = float(df["close"].iloc[-1])
+    pct = last / level - 1.0
+    from .patterns.advanced import volume_confirms
+    vok = volume_confirms(df, lookback=vol_lookback, mult=vol_mult)
+    above = last >= level
+
+    if above and vok:
+        return BreakoutCheck(
+            "confirmed", "✅",
+            f"Confirmed — closed ₹{last:.1f}, above the ₹{level:.1f} trigger on "
+            "above-average volume.", level, pct, True)
+    if above and vok is False:
+        return BreakoutCheck(
+            "volume_light", "⚠️",
+            f"Above the ₹{level:.1f} trigger (₹{last:.1f}) but on light volume — "
+            "breakouts without a volume push often fail back. Wait for confirmation.",
+            level, pct, False)
+    if above:      # vok is None (not enough volume history) — treat as tentative
+        return BreakoutCheck(
+            "confirmed", "✅",
+            f"Closed above the ₹{level:.1f} trigger (₹{last:.1f}).", level, pct, None)
+    if pct >= -near_pct:
+        return BreakoutCheck(
+            "approaching", "⏳",
+            f"Approaching — ₹{last:.1f} is {abs(pct):.1%} below the ₹{level:.1f} "
+            "trigger. Wait for a decisive close ABOVE it (ideally on volume); don't "
+            "jump early on a trendline poke.", level, pct, vok)
+    return BreakoutCheck(
+        "far", "🔶",
+        f"Still building — ₹{last:.1f} is {abs(pct):.1%} below the ₹{level:.1f} "
+        "breakout trigger.", level, pct, vok)
+
+
+@dataclass
 class PatternExplanation:
     name: str
     basis: str                                   # one-line description of the method

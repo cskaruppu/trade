@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from nsetrade.explain import explain_pattern
+from nsetrade.explain import breakout_check, explain_pattern
 from nsetrade.patterns.advanced import PatternMatch, detect_flat_base
 
 
@@ -55,6 +55,45 @@ def test_explain_pattern_builds_criteria_stop_and_target():
     assert ex.stop is not None and ex.stop == m.support
     assert ex.target is not None and ex.target > m.breakout_level
     assert "line in the sand" in ex.invalidation
+
+
+def _match(level):
+    return PatternMatch(name="X", found=True, direction="bullish",
+                        status="forming", breakout_level=level, support=level * 0.9)
+
+
+def test_breakout_confirmed_needs_close_above_and_volume():
+    close = list(np.linspace(40, 50, 80))
+    close[-1] = 55.0                                  # closes above the 54 trigger
+    vol = [1e5] * 79 + [5e5]                          # last bar volume surges
+    df = frame(close)
+    df["volume"] = vol
+    bc = breakout_check(df, _match(54.0))
+    assert bc.state == "confirmed" and bc.volume_ok is True
+
+
+def test_breakout_above_but_light_volume_is_flagged():
+    close = list(np.linspace(40, 50, 80))
+    close[-1] = 55.0
+    df = frame(close)
+    df["volume"] = [1e5] * 80                          # no surge on the breakout bar
+    bc = breakout_check(df, _match(54.0))
+    assert bc.state == "volume_light" and bc.volume_ok is False
+
+
+def test_breakout_approaching_when_just_below_trigger():
+    close = list(np.linspace(40, 50, 80))
+    close[-1] = 52.5                                   # ~2.8% below 54 → approaching
+    df = frame(close)
+    bc = breakout_check(df, _match(54.0))
+    assert bc.state == "approaching"
+    assert bc.pct_to_level < 0
+
+
+def test_breakout_far_when_well_below():
+    df = frame(list(np.linspace(40, 46, 80)))          # ~15% below 54
+    bc = breakout_check(df, _match(54.0))
+    assert bc.state == "far"
 
 
 def test_explain_handles_generic_match_without_key():
