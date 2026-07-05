@@ -108,3 +108,24 @@ def test_only_volume_confirmed_filter(monkeypatch):
         only_volume_confirmed=True, _provider_obj=prov)
     assert [h.pattern for h in hits] == ["Cup & Handle"]   # the vol-confirmed one
     assert hits[0].as_row()["vol"] == "✓"
+
+
+def test_only_confirmed_filter(monkeypatch):
+    fake = [PatternMatch(name="Cup & Handle", found=True, direction="bullish",
+                         status="breakout", breakout_level=105.0, support=95.0)]
+    monkeypatch.setattr("nsetrade.patterns.detect_advanced", lambda df: fake)
+
+    # last close 110 >= 105 AND a volume surge on the last bar → confirmed
+    df = frame(np.linspace(90, 110, 200))
+    df["volume"] = [1e5] * 199 + [1e6]
+    hits, _ = pattern_scan.scan_for_patterns(
+        ["AAA"], ["cup_and_handle"], with_edge=False, only_confirmed=True,
+        _provider_obj=_FakeProvider({"AAA": df}))
+    assert len(hits) == 1 and hits[0].confirm == "confirmed"
+    assert hits[0].as_row()["signal"] == "✅ confirmed"
+
+    # same breakout but flat volume → not confirmed → filtered out
+    hits2, _ = pattern_scan.scan_for_patterns(
+        ["AAA"], ["cup_and_handle"], with_edge=False, only_confirmed=True,
+        _provider_obj=_FakeProvider({"AAA": frame(np.linspace(90, 110, 200))}))
+    assert hits2 == []

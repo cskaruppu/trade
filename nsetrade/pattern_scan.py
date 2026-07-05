@@ -32,12 +32,17 @@ class PatternHit:
     volume_confirmed: Optional[bool] = None
     target: Optional[float] = None        # measured-move target
     upside_pct: Optional[float] = None     # implied % move from current close
+    confirm: Optional[str] = None          # breakout_check state
     note: str = ""
+
+    _SIGNAL = {"confirmed": "✅ confirmed", "volume_light": "⚠️ weak vol",
+               "approaching": "⏳ near", "far": "🔶 building"}
 
     def as_row(self) -> dict:
         return {
             "symbol": self.symbol,
             "pattern": self.pattern,
+            "signal": self._SIGNAL.get(self.confirm or "", "-"),
             "status": self.status,
             "vol": ("✓" if self.volume_confirmed else
                     ("✗" if self.volume_confirmed is False else "-")),
@@ -64,16 +69,20 @@ def scan_for_patterns(
     with_edge: bool = True,
     only_breakouts: bool = False,
     only_volume_confirmed: bool = False,
+    only_confirmed: bool = False,
     on_progress=None,
     _provider_obj=None,
 ):
     """Scan ``symbols`` for the requested patterns. Returns ``(hits, errors)``.
 
     ``only_volume_confirmed`` keeps only breakouts backed by above-average
-    volume. Pass ``_provider_obj`` to inject a provider in tests.
+    volume; ``only_confirmed`` keeps only *confirmed* breakouts (a close above
+    the trigger on above-average volume). Pass ``_provider_obj`` to inject a
+    provider in tests.
     """
     from .ai import _pattern_key
     from .data import get_provider
+    from .explain import breakout_check
     from .patterns import detect_advanced
 
     keys = set(pattern_keys or DEFAULT_PATTERNS)
@@ -93,6 +102,9 @@ def scan_for_patterns(
                     continue
                 if only_volume_confirmed and not m.volume_confirmed:
                     continue
+                _bc = breakout_check(df, m)
+                if only_confirmed and _bc.state != "confirmed":
+                    continue
                 # measured-move target (breakout + the base's own height) and
                 # the % upside it implies from the current price
                 target = upside = None
@@ -103,7 +115,8 @@ def scan_for_patterns(
                 hit = PatternHit(symbol=sym, pattern=m.name, direction=m.direction,
                                  status=m.status, breakout_level=m.breakout_level,
                                  close=close, volume_confirmed=m.volume_confirmed,
-                                 target=target, upside_pct=upside, note=m.note)
+                                 target=target, upside_pct=upside,
+                                 confirm=_bc.state, note=m.note)
                 if with_edge:
                     try:
                         from .edge import pattern_edge_validated
@@ -120,8 +133,9 @@ def scan_for_patterns(
         if on_progress:
             on_progress(i + 1, len(symbols), sym)
 
-    # best first: robust edge → volume-confirmed → higher win-rate → breakout
-    hits.sort(key=lambda h: (h.edge_robust is True,
+    # best first: confirmed breakout → robust edge → volume → win-rate → breakout
+    hits.sort(key=lambda h: (h.confirm == "confirmed",
+                             h.edge_robust is True,
                              h.volume_confirmed is True,
                              h.edge_win_rate if h.edge_win_rate is not None else -1,
                              h.status == "breakout"), reverse=True)

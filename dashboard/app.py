@@ -1013,7 +1013,12 @@ if _page == "🏆 Pattern Picks":
     chosen = pp1.multiselect("Patterns", list(_PAT_CHOICES),
                              default=["Cup & Handle", "Darvas Box"], key="pp_pat")
     pp_uni = pp1.selectbox("Universe", list_universes(), index=0, key="pp_uni")
-    pp_brk = pp2.checkbox("Confirmed breakouts only", value=False, key="pp_brk")
+    pp_conf = pp2.checkbox("✅ Confirmed breakouts only", value=False, key="pp_conf",
+                           help="only stocks that have CLOSED above the pattern's "
+                                "trigger on above-average volume — no early/forming "
+                                "setups, no trendline pokes")
+    pp_brk = pp2.checkbox("Any breakout status", value=False, key="pp_brk",
+                          help="looser: pattern flagged as breakout (may lack volume)")
     pp_vol = pp2.checkbox("Volume-confirmed only", value=False, key="pp_vol",
                           help="breakout backed by above-average volume")
     pp_edge = pp2.checkbox("Score historical edge", value=True, key="pp_edge",
@@ -1031,7 +1036,7 @@ if _page == "🏆 Pattern Picks":
             syms, keys, provider=provider,
             provider_config=provider_config(cfg, provider),
             with_edge=pp_edge, only_breakouts=pp_brk,
-            only_volume_confirmed=pp_vol,
+            only_volume_confirmed=pp_vol, only_confirmed=pp_conf,
             on_progress=lambda d, t, s: prog.progress(d / t, text=s))
         prog.empty()
         rows = [h.as_row() for h in hits]
