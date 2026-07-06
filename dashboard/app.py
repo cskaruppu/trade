@@ -480,19 +480,23 @@ if _page == "🔬 Analyse":
 
             # ---- history depth control + chart (only the primary pattern drawn) ----
             _per_year = {"daily": 252, "weekly": 52, "monthly": 12}[tf]
-            _hc1, _hc2 = st.columns([3, 2])
+            _hc1, _hc2, _hc3 = st.columns([3, 1, 1])
             hsel = _hc1.select_slider(
                 "Chart history", options=["1Y", "3Y", "5Y", "10Y", "Max"],
                 value="3Y", key="dd_hist")
             dd_tl = _hc2.checkbox("Trendlines", value=False, key="dd_tl",
                                   help="support/resistance lines through swings")
+            dd_fib = _hc3.checkbox("Fibonacci", value=False, key="dd_fib",
+                                   help="23.6 / 38.2 / 50 / 61.8 / 78.6% retracement "
+                                        "levels of the last major swing + extension "
+                                        "targets")
             _bars = (len(df) if hsel == "Max"
                      else {"1Y": 1, "3Y": 3, "5Y": 5, "10Y": 10}[hsel] * _per_year)
             _bars = max(60, min(_bars, len(df)))
             only = {_pattern_key(best.name)} if best else None
             fig, notes = build_figure(f"{sym} · {tf}", df, bars=_bars,
                                       show_trendlines=dd_tl,
-                                      show_patterns=True, show_fib=False,
+                                      show_patterns=True, show_fib=dd_fib,
                                       only_keys=only)
 
             # trade plan → entry / stop / target, drawn on the chart
