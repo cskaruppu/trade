@@ -942,6 +942,14 @@ def detect_advanced(df: pd.DataFrame, only_found: bool = True) -> list[PatternMa
 
     With ``only_found=True`` (default) only detected patterns are returned.
     """
+    # force NumPy float64 up front: a nullable dtype (Float64/Int64) makes
+    # `.values` an ExtensionArray whose element comparisons yield pd.NA, raising
+    # "boolean value of NA is ambiguous" inside the detectors.
+    if df is not None and len(df):
+        df = df.copy()
+        for _c in ("open", "high", "low", "close", "volume"):
+            if _c in df.columns:
+                df[_c] = pd.to_numeric(df[_c], errors="coerce").astype("float64")
     results = []
     for fn in ADVANCED_DETECTORS.values():
         try:

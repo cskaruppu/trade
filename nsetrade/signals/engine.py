@@ -102,6 +102,14 @@ def signal_for_frame(symbol: str, df: pd.DataFrame) -> Signal:
     if df.empty:
         raise ValueError(f"no data for {symbol}")
 
+    # belt-and-suspenders: force NumPy float64 so a nullable dtype (Float64/Int64,
+    # which some yfinance/pandas versions return) can't raise "boolean value of NA
+    # is ambiguous" downstream.
+    df = df.copy()
+    for _c in ("open", "high", "low", "close", "volume"):
+        if _c in df.columns:
+            df[_c] = pd.to_numeric(df[_c], errors="coerce").astype("float64")
+
     enriched = add_all(df)
     candles = detect_candlesticks(df)
     charts = detect_chart_patterns(enriched)
@@ -113,7 +121,8 @@ def signal_for_frame(symbol: str, df: pd.DataFrame) -> Signal:
     score = 0.0
     reasons: list[str] = []
     for key, fired in last_flags.items():
-        if fired and _WEIGHTS.get(key, 0):
+        # guard against pd.NA / NaN flags (nullable boolean) → never bool(NA)
+        if _WEIGHTS.get(key, 0) and pd.notna(fired) and bool(fired):
             score += _WEIGHTS[key]
             reasons.append(_LABELS.get(key, key))
 
