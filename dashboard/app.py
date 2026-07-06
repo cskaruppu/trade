@@ -410,14 +410,27 @@ if _page == "🔬 Analyse":
             df = resample_ohlcv(daily, tf)
             sig = signal_for_frame(sym, df)
             matches = detect_advanced(df)
-            # pick the primary pattern: a bullish breakout if present, else strongest
-            best = None
+            # default primary pattern: a bullish breakout if present, else strongest
+            _default_best = None
             for m in matches:
                 if m.direction == "bullish" and m.status == "breakout":
-                    best = m
+                    _default_best = m
                     break
-            if best is None and matches:
-                best = matches[0]
+            if _default_best is None and matches:
+                _default_best = matches[0]
+            # …but let the user pick WHICH detected pattern to draw/analyse — the
+            # engine may see a double bottom where you drew a cup; both are valid
+            best = _default_best
+            if len(matches) > 1:
+                _pnames = [f"{m.name} · {m.status}" for m in matches]
+                _pidx = matches.index(_default_best) if _default_best in matches else 0
+                _psel = st.selectbox(
+                    f"📐 Pattern to draw & analyse — {len(matches)} detected on the "
+                    f"{tf} chart", _pnames, index=_pidx, key=f"dd_patpick_{sym}_{tf}",
+                    help="charting is subjective — the engine may group the move "
+                         "differently than you did. Switch timeframe to change what "
+                         "it detects.")
+                best = matches[_pnames.index(_psel)]
             conf = edge_row = ve = None      # set below when a pattern is found
 
             # headline: what pattern + verdict
